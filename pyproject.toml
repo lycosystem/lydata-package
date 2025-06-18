@@ -44,6 +44,10 @@ docs = [
 test = [
     "pytest",
 ]
+dev = [
+    "pre-commit",
+    "git-cliff",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
