@@ -25,10 +25,16 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install .[tests]
       - name: Test with pytest
+        # Below, we first run pytest in the `tests/` folder. Because we use a `src`
+        # layout, this will fail if the package is not installed correctly.
+        # Afterwards, we execute all doctests in the `src` tree. This will NOT run with
+        # the installed code, but it doesn't matter, because we already know it is
+        # installable from the first line.
         run: |
           pytest --cov=lydata --cov-report=xml tests
           pytest --cov=lydata --cov-report=xml --cov-append --doctest-modules src
       - name: Add coverage comment
+        if: success() || failure()
         uses: py-cov-action/python-coverage-comment-action@v3
         with:
           GITHUB_TOKEN: ${{ github.token }}
