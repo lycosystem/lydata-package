@@ -69,3 +69,6 @@ ignore = ["B028", "N816", "E712"]
 
 [tool.uv]
 package = true
+
+[tool.coverage.run]
+relative_files = true
