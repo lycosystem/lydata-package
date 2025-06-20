@@ -30,7 +30,7 @@ jobs:
       # layout, this will fail if the package is not installed correctly.
       - name: Test package is installable
         run: pytest --cov=lydata --cov-config=pyproject.toml tests
-        with:
+        env:
           COVERAGE_FILE: .coverage.is_installable
 
       # Now, we execute all doctests in the `src` tree. This will NOT run with
@@ -39,7 +39,7 @@ jobs:
       - name: Run doctests
         if: success() || failure()   # run these even if previous step fails
         run: pytest --cov=lydata --cov-config=pyproject.toml --doctest-modules src
-        with:
+        env:
           COVERAGE_FILE: .coverage.doctests
 
       # Lastly, we collect all files that start with `.coverage` into one file and
