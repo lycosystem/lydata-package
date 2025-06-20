@@ -3,6 +3,7 @@
 [![Build](https://github.com/lycosystem/lydata/actions/workflows/build.yml/badge.svg)](https://github.com/lycosystem/lydata/actions/workflows/build.yml)
 [![Tests](https://github.com/lycosystem/lydata/actions/workflows/tests.yml/badge.svg)](https://github.com/lycosystem/lydata/actions/workflows/tests.yml)
 [![Documentation Status](https://readthedocs.org/projects/lydata/badge/?version=stable)](https://lydata.readthedocs.io/en/stable/?badge=stable)
+[![Coverage badge](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/lycosystem/lydata-package/python-coverage-comment-action-data/endpoint.json)](https://htmlpreview.github.io/?https://github.com/lycosystem/lydata-package/blob/python-coverage-comment-action-data/htmlcov/index.html)
 
 This repository provides a Python library for loading, manipulating, and validating the datasets available on [lyDATA](https://github.com/lycosystem/lydata).
 
