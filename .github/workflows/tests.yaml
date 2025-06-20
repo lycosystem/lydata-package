@@ -31,8 +31,8 @@ jobs:
         # the installed code, but it doesn't matter, because we already know it is
         # installable from the first line.
         run: |
-          pytest --cov=lydata --cov-report=xml --cov-config=pyproject.toml tests
-          pytest --cov=lydata --cov-report=xml --cov-config=pyproject.toml --cov-append --doctest-modules src
+          pytest --cov=lydata --cov-config=pyproject.toml tests
+          pytest --cov=lydata --cov-config=pyproject.toml --cov-append --doctest-modules src
       - name: Add coverage comment
         if: success() || failure()
         uses: py-cov-action/python-coverage-comment-action@v3

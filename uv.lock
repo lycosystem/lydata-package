@@ -488,10 +488,8 @@ docs = [
     { name = "sphinx-autodoc-typehints", version = "3.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "sphinx-book-theme" },
 ]
-test = [
-    { name = "pytest" },
-]
 tests = [
+    { name = "pytest" },
     { name = "pytest-cov" },
 ]
 
@@ -507,13 +505,13 @@ requires-dist = [
     { name = "pre-commit", marker = "extra == 'dev'" },
     { name = "pydantic" },
     { name = "pygithub" },
-    { name = "pytest", marker = "extra == 'test'" },
-    { name = "pytest-cov", marker = "extra == 'tests'", specifier = ">=6.2.1" },
+    { name = "pytest", marker = "extra == 'tests'" },
+    { name = "pytest-cov", marker = "extra == 'tests'" },
     { name = "sphinx", marker = "extra == 'docs'" },
     { name = "sphinx-autodoc-typehints", marker = "extra == 'docs'" },
     { name = "sphinx-book-theme", marker = "extra == 'docs'" },
 ]
-provides-extras = ["docs", "test", "dev", "tests"]
+provides-extras = ["docs", "tests", "dev"]
 
 [[package]]
 name = "markdown-it-py"
