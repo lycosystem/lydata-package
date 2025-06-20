@@ -41,8 +41,9 @@ docs = [
     "sphinx-autodoc-typehints",
     "myst-parser[linkify]",
 ]
-test = [
+tests = [
     "pytest",
+    "pytest-cov",
 ]
 dev = [
     "pre-commit",
@@ -65,3 +66,6 @@ exclude = ["docs"]
 [tool.ruff.lint]
 select = ["E", "F", "W", "B", "C", "R", "U", "D", "I", "S", "T", "A", "N"]
 ignore = ["B028", "N816", "E712"]
+
+[tool.uv]
+package = true
