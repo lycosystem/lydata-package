@@ -15,7 +15,7 @@ def get_github_auth(
     token: str | None = None,
     user: str | None = None,
     password: str | None = None,
-) -> Auth:
+) -> Auth.Auth | None:
     """Get the GitHub authentication object."""
     token = token or os.getenv("GITHUB_TOKEN")
     user = user or os.getenv("GITHUB_USER")
@@ -29,7 +29,8 @@ def get_github_auth(
         logger.debug("Using GITHUB_USER and GITHUB_PASSWORD for authentication.")
         return Auth.Login(user, password)
 
-    raise ValueError("Neither GITHUB_TOKEN nor GITHUB_USER and GITHUB_PASSWORD set.")
+    logger.info("No authentication provided. Using unauthenticated access.")
+    return None
 
 
 def update_and_expand(
@@ -243,12 +244,3 @@ def infer_and_combine_levels(
         axis="columns",
     )
     return result.join(max_llh)
-
-
-def _main() -> None:
-    """Run the main function."""
-    ...
-
-
-if __name__ == "__main__":
-    _main()

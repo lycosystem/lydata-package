@@ -79,12 +79,7 @@ class LyDataset(BaseModel):
 
     @property
     def path_on_disk(self) -> Path:
-        """Get the path to the dataset.
-
-        >>> conf = LyDataset(year="2021", institution="usz", subsite="oropharynx")
-        >>> conf.path_on_disk.exists()
-        True
-        """
+        """Get the path to the dataset."""
         install_loc = Path(__file__).parent.parent
         return install_loc / self.name / "data.csv"
 
@@ -164,12 +159,9 @@ class LyDataset(BaseModel):
         :py:class:`~pandas.DataFrame`.
 
         >>> conf = LyDataset(year=2021, institution="clb", subsite="oropharynx")
-        >>> df_from_disk = conf.get_dataframe()
-        >>> df_from_disk.shape
+        >>> df = conf.get_dataframe(use_github=True)
+        >>> df.shape
         (263, 82)
-        >>> df_from_github = conf.get_dataframe(use_github=True)
-        >>> np.all(df_from_disk.fillna(0) == df_from_github.fillna(0))
-        np.True_
         """
         kwargs = {"header": [0, 1, 2]}
         kwargs.update(load_kwargs)
@@ -242,7 +234,7 @@ def available_datasets(
     institution: str = "*",
     subsite: str = "*",
     search_paths: list[Path] | None = None,
-    use_github: bool = False,
+    use_github: bool = True,
     repo_name: str = _default_repo_name,
     ref: str = "main",
 ) -> Generator[LyDataset, None, None]:
@@ -312,7 +304,7 @@ def load_datasets(
     institution: str = "*",
     subsite: str = "*",
     search_paths: list[Path] | None = None,
-    use_github: bool = False,
+    use_github: bool = True,
     repo_name: str = _default_repo_name,
     ref: str = "main",
     **kwargs,
@@ -334,14 +326,3 @@ def load_datasets(
     )
     for dset_conf in dset_confs:
         yield dset_conf.get_dataframe(use_github=use_github, **kwargs)
-
-
-def _run_doctests() -> None:
-    """Run the doctests."""
-    import doctest
-
-    doctest.testmod()
-
-
-if __name__ == "__main__":
-    _run_doctests()
