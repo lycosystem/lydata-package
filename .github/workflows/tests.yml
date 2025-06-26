@@ -10,6 +10,7 @@ on:
 
 jobs:
   test:
+    name: Run tests & report coverage
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -41,6 +42,7 @@ jobs:
         run: pytest --cov=lydata --cov-config=pyproject.toml --doctest-modules src
         env:
           COVERAGE_FILE: .coverage.doctests
+          GITHUB_TOKEN: ${{ secrets.LYCOSYSTEM_READALL }}
 
       # Lastly, we can make sure the examples in the README.md are up to date.
       # Because doctests can occur in any text file, we can run it over those examples
@@ -50,6 +52,7 @@ jobs:
         run: coverage run -m doctest README.md
         env:
           COVERAGE_FILE: .coverage.readme
+          GITHUB_TOKEN: ${{ secrets.LYCOSYSTEM_READALL }}
 
       # Lastly, we collect all files that start with `.coverage` into one file and
       # create a report either as a comment on the PR or in a separate branch if its
