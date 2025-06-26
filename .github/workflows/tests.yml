@@ -42,10 +42,19 @@ jobs:
         env:
           COVERAGE_FILE: .coverage.doctests
 
+      # Lastly, we can make sure the examples in the README.md are up to date.
+      # Because doctests can occur in any text file, we can run it over those examples
+      # as well:
+      - name: Test README.md examples
+        if: success() || failure()
+        run: coverage run -m doctest README.md
+        env:
+          COVERAGE_FILE: .coverage.readme
+
       # Lastly, we collect all files that start with `.coverage` into one file and
       # create a report either as a comment on the PR or in a separate branch if its
       # a commit to the main branch. From that branch we can put badges and coverage
-      # reports into e.g. our main README.md 
+      # reports into e.g. our main README.md
       - name: Add coverage comment
         if: success() || failure()   # run these even if previous step fails
         uses: py-cov-action/python-coverage-comment-action@v3
