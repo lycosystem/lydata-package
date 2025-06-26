@@ -923,19 +923,3 @@ class LyDataAccessor:
             result.loc[is_unknown, (modality, side, superlevel)] = None
 
         return result
-
-
-def _main() -> None:
-    """Run main function."""
-    ...
-
-
-def _run_doctests() -> None:
-    """Run the module doctests."""
-    import doctest
-
-    doctest.testmod()
-
-
-if __name__ == "__main__":
-    _run_doctests()
