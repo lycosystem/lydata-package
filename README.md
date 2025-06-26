@@ -83,17 +83,10 @@ And we have implemented `Q` and `C` objects inspired by Django that allow easier
 
 # select patients younger than 50 that are not HPV positive (includes NaNs)
 >>> query_result = first_dataset.ly.query((C("age") < 50) & ~(C("hpv") == True))
->>> print(query_result)
-... # doctest: +ELLIPSIS, +NORMALIZE_WHITESPACE
-    patient                                                ... positive_dissected
-          #                                                ...             contra
-         id         institution     sex age ... hpv_status ...       III   IV   V
-11     P030  Centre Léon Bérard    male  49 ...      False ...       NaN  NaN NaN
-12     P031  Centre Léon Bérard    male  46 ...      False ...       NaN  NaN NaN
-                                                           ...
-249    P307  Centre Léon Bérard    male  49 ...      False ...       NaN  NaN NaN
-257    P315  Centre Léon Bérard  female  43 ...      False ...       NaN  NaN NaN
-[13 rows x 82 columns]
+>>> (query_result.ly.age < 50).all()
+np.True_
+>>> (query_result.ly.hpv == False).all()
+np.True_
 
 ```
 
