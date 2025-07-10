@@ -16,162 +16,16 @@ platform database.
 .. _LyProX: https://lyprox.org
 """
 
+import sys
 from typing import Any
 
 import pandas as pd
 from loguru import logger
-from pandera import Check, Column, DataFrameSchema
-from pandera.errors import SchemaError
+from pydantic import Field, create_model
 
-from lydata.loader import available_datasets
-
-_NULLABLE_OPTIONAL = {"required": False, "nullable": True}
-_NULLABLE_OPTIONAL_BOOLEAN_COLUMN = Column(
-    dtype="boolean",
-    coerce=True,
-    **_NULLABLE_OPTIONAL,
-)
-_DATE_CHECK = Check.str_matches(r"^\d{4}-\d{2}-\d{2}$")
-_LNLS = [
-    "I",
-    "Ia",
-    "Ib",
-    "II",
-    "IIa",
-    "IIb",
-    "III",
-    "IV",
-    "V",
-    "Va",
-    "Vb",
-    "VI",
-    "VII",
-    "VIII",
-    "IX",
-    "X",
-]
-
-
-class ParsingError(Exception):
-    """Error while parsing the CSV file."""
-
-
-patient_columns = {
-    ("patient", "core", "institution"): Column(str),
-    ("patient", "core", "sex"): Column(str, Check.str_matches(r"^(male|female)$")),
-    ("patient", "core", "age"): Column(int),
-    ("patient", "core", "weight"): Column(
-        float, Check.greater_than(0), **_NULLABLE_OPTIONAL
-    ),
-    ("patient", "core", "diagnose_date"): Column(str, _DATE_CHECK),
-    ("patient", "core", "alcohol_abuse"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
-    ("patient", "core", "nicotine_abuse"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
-    ("patient", "core", "hpv_status"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
-    ("patient", "core", "neck_dissection"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
-    ("patient", "core", "tnm_edition"): Column(int, Check.in_range(7, 8)),
-    ("patient", "core", "n_stage"): Column(int, Check.in_range(0, 3)),
-    ("patient", "core", "m_stage"): Column(int, Check.in_range(-1, 1)),
-}
-
-tumor_columns = {
-    ("tumor", "core", "subsite"): Column(str, Check.str_matches(r"^C\d{2}(\.\d)?$")),
-    ("tumor", "core", "t_stage"): Column(int, Check.in_range(0, 4)),
-    ("tumor", "core", "stage_prefix"): Column(str, Check.str_matches(r"^(p|c)$")),
-    ("tumor", "core", "volume"): Column(
-        float, Check.greater_than(0), **_NULLABLE_OPTIONAL
-    ),
-    ("tumor", "core", "central"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
-    ("tumor", "core", "extension"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
-}
-
-
-def get_modality_columns(
-    modality: str,
-    lnls: list[str] = _LNLS,
-) -> dict[tuple[str, str, str], Column]:
-    """Get the validation columns for a given modality."""
-    cols = {(modality, "core", "date"): Column(str, _DATE_CHECK, **_NULLABLE_OPTIONAL)}
-
-    for side in ["ipsi", "contra"]:
-        for lnl in lnls:
-            cols[(modality, side, lnl)] = _NULLABLE_OPTIONAL_BOOLEAN_COLUMN
-
-    return cols
-
-
-def construct_schema(
-    modalities: list[str],
-    lnls: list[str] = _LNLS,
-) -> DataFrameSchema:
-    """Construct a :py:class:`pandera.DataFrameSchema` for the lydata datasets."""
-    schema = DataFrameSchema(patient_columns).add_columns(tumor_columns)
-
-    for modality in modalities:
-        schema = schema.add_columns(get_modality_columns(modality, lnls))
-
-    return schema
-
-
-def validate_datasets(
-    year: int | str = "*",
-    institution: str = "*",
-    subsite: str = "*",
-    use_github: bool = True,
-    repo: str = "lycosystem/lydata",
-    ref: str = "main",
-    **kwargs,
-) -> None:
-    """Validate all lydata datasets.
-
-    The arguments of this function are directly passed to the
-    :py:func:`available_datasets` function to determine which datasets to validate.
-
-    Keyword arguments beyond the ones that :py:func:`available_datasets` accepts are
-    passed to the :py:meth:`~lydata.loader.Dataset.load` method of the
-    :py:class:`~lydata.loader.Dataset` instances.
-    """
-    lydata_schema = construct_schema(
-        modalities=["pathology", "diagnostic_consensus", "PET", "CT", "FNA", "MRI"],
-    )
-
-    for dataset in available_datasets(
-        year=year,
-        institution=institution,
-        subsite=subsite,
-        use_github=use_github,
-        repo_name=repo,
-        ref=ref,
-    ):
-        dataframe = dataset.get_dataframe(**kwargs)
-        try:
-            lydata_schema.validate(dataframe)
-            logger.info(f"Schema validation passed for {dataframe!r}.")
-        except SchemaError as schema_err:
-            message = f"Schema validation failed for {dataframe!r}."
-            logger.error(message, exc_info=schema_err)
-            raise Exception(message) from schema_err
-
-
-def delete_private_keys(nested: dict) -> dict:
-    """Delete private keys from a nested dictionary.
-
-    A 'private' key is a key whose name starts with an underscore. For example:
-
-    >>> delete_private_keys({"patient": {"__doc__": "some patient info", "age": 61}})
-    {'patient': {'age': 61}}
-    >>> delete_private_keys({"patient": {"age": 61}})
-    {'patient': {'age': 61}}
-    """
-    cleaned = {}
-
-    if isinstance(nested, dict):
-        for key, value in nested.items():
-            if not (isinstance(key, str) and key.startswith("_")):
-                cleaned[key] = delete_private_keys(value)
-    else:
-        cleaned = nested
-
-    return cleaned
+from lydata import loader
+from lydata.schema import BaseRecord, ModalityRecord
+from lydata.utils import get_default_modalities
 
 
 def flatten(
@@ -226,131 +80,57 @@ def unflatten(flat: dict) -> dict:
     return result
 
 
-def get_depth(
-    nested_map: dict,
-    leaf_keys: set | None = None,
-) -> int:
-    """Get the depth at which 'leaf' dicts sit in a nested dictionary.
+def move_value(mapping: dict[str, Any], from_key: str, to_key: str) -> None:
+    """Move a key in a dictionary to another key."""
+    if from_key not in mapping:
+        raise KeyError(f"Key '{from_key}' not found in mapping.")
 
-    A leaf is a dictionary that contains any of the ``leaf_keys``. The default is
-    ``{"func", "default"}``.
-
-    >>> nested_column_map = {"patient": {"age": {"func": int}}}
-    >>> get_depth(nested_column_map)
-    2
-    >>> flat_column_map = flatten(nested_column_map, max_depth=2)
-    >>> get_depth(flat_column_map)
-    1
-    >>> nested_column_map = {"patient": {"__doc__": "some patient info", "age": 61}}
-    >>> get_depth(nested_column_map)   # doctest: +ELLIPSIS
-    Traceback (most recent call last):
-        ...
-    ValueError: Leaf of nested map must be dict with any of ['default', 'func'].
-    """
-    leaf_keys = leaf_keys or {"func", "default"}
-
-    for _, value in nested_map.items():
-        if not isinstance(value, dict):
-            raise ValueError(
-                f"Leaf of nested map must be dict with any of {sorted(leaf_keys)}."
-            )
-
-        is_leaf = not set(value.keys()).isdisjoint(leaf_keys)
-        return 1 if is_leaf else 1 + get_depth(value, leaf_keys)
-
-    raise ValueError("Empty `nested_map`.")
+    mapping[to_key] = mapping.pop(from_key)
 
 
-def transform_to_lyprox(
-    raw: pd.DataFrame,
-    column_map: dict[str | tuple, dict | Any],
-) -> pd.DataFrame:
-    """Transform ``raw`` data into table that can be uploaded directly to `LyProX`_.
+def create_modality_field(modality: str) -> tuple[type, Field]:
+    """Create a field for a specific modality."""
+    return (
+        ModalityRecord,
+        Field(
+            default_factory=ModalityRecord,
+            description=f"Involvement data for modality {modality}",
+        ),
+    )
 
-    To do so, it uses instructions in the ``colum_map`` dictionary, that needs to have
-    a particular structure:
 
-    For each column in the final 'lyproxified' :py:class:`pd.DataFrame`, one entry must
-    exist in the ``column_map`` dictionary. E.g., for the column corresponding to a
-    patient's age, the dictionary should contain a key-value pair of this shape:
+def validate(dataset: pd.DataFrame) -> bool:
+    """Validate the given dataset against the lyDATA schema."""
+    top_lvl_cols = set(dataset.columns.get_level_values(0).unique())
+    top_lvl_cols -= {"patient", "tumor"}
 
-    .. code-block:: python
+    modality_cols = set()
+    for col in top_lvl_cols:
+        if col in get_default_modalities():
+            modality_cols.add(col)
 
-        column_map = {
-            ("patient", "core", "age"): {
-                "func": compute_age_from_raw,
-                "kwargs": {"randomize": False},
-                "columns": ["birthday", "date of diagnosis"]
-            },
-        }
+    FullRecord = create_model(  # noqa: N806
+        "FullRecord",
+        __base__=BaseRecord,
+        **{col: create_modality_field(col) for col in modality_cols},
+    )
 
-    In this example, the function ``compute_age_from_raw`` is called with the
-    values of the columns ``"birthday"`` and ``"date of diagnosis"`` as positional
-    arguments, and the keyword argument ``"randomize"`` is set to ``False``. The
-    function then returns the patient's age, which is subsequently stored in the column
-    ``("patient", "core", "age")``.
+    for i, row in dataset.iterrows():
+        record = unflatten(row.to_dict())
 
-    Alternatively, this dictionary can also have a nested, tree-like structure, like
-    this:
+        move_value(record["patient"], from_key="#", to_key="_")
+        move_value(record["tumor"], from_key="1", to_key="_")
 
-    .. code-block:: python
+        with logger.catch(message=f"Validation error for patient {i}"):
+            validated_record = FullRecord(**record)
+            logger.debug(f"Patient {i} is valid: {validated_record}")
 
-        column_map = {
-            "patient": {
-                "core": {
-                    "age": {
-                        "func": compute_age_from_raw,
-                        "kwargs": {"randomize": False},
-                        "columns": ["birthday", "date of diagnosis"]
-                    }
-                }
-            }
-        }
-
-    In this case it is imortant that all the leaf nodes, which are defined by having
-    either a ``"func"`` or a ``"default"`` key, are at the same depth. Because this
-    nested dictionary is flattened to look like the first example above.
-
-    .. _LyProX: https://lyprox.org
-    """
-    column_map = delete_private_keys(column_map)
-    instruction_depth = get_depth(column_map)
-
-    if instruction_depth > 1:
-        column_map = flatten(column_map, max_depth=instruction_depth)
-
-    multi_idx = pd.MultiIndex.from_tuples(column_map.keys())
-    processed = pd.DataFrame(columns=multi_idx)
-
-    for multi_idx_col, instruction in column_map.items():
-        if instruction == "":
-            continue
-
-        if "default" in instruction:
-            processed[multi_idx_col] = [instruction["default"]] * len(raw)
-
-        elif "func" in instruction:
-            cols = instruction.get("columns", [])
-            kwargs = instruction.get("kwargs", {})
-            func = instruction["func"]
-
-            try:
-                processed[multi_idx_col] = [
-                    func(*vals, **kwargs) for vals in raw[cols].values
-                ]
-            except Exception as exc:
-                raise ParsingError(
-                    f"Exception encountered while parsing column {multi_idx_col}"
-                ) from exc
-
-        else:
-            raise ParsingError(
-                f"Column {multi_idx_col} has neither a `default` value nor `func` "
-                "describing how to fill this column."
-            )
-
-    return processed
+    return True
 
 
 if __name__ == "__main__":
-    validate_datasets()
+    logger.enable("lydata")
+    logger.remove()
+    logger.add(sys.stderr, level="INFO")
+    dataset = next(loader.load_datasets())
+    validate(dataset)
