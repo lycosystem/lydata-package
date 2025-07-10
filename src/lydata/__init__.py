@@ -9,7 +9,6 @@ from lydata.loader import (
     load_datasets,
 )
 from lydata.utils import infer_and_combine_levels
-from lydata.validator import validate_datasets
 
 __author__ = "Roman Ludwig"
 __email__ = "roman.ludwig@usz.ch"
@@ -22,7 +21,6 @@ __all__ = [
     "C",
     "available_datasets",
     "load_datasets",
-    "validate_datasets",
     "infer_and_combine_levels",
 ]
 

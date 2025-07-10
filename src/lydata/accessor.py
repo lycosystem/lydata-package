@@ -48,7 +48,6 @@ from lydata.utils import (
     get_default_column_map,
     get_default_modalities,
 )
-from lydata.validator import construct_schema
 
 warnings.simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
 

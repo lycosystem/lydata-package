@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 from lydata.schema import (
-    CompleteRecord,
+    BaseRecord,
     PatientInfo,
     PatientRecord,
     TumorInfo,
@@ -93,14 +93,14 @@ def test_tumor_record(tumor_info: TumorInfo) -> None:
 
 
 @pytest.fixture
-def complete_record(patient_info: PatientInfo, tumor_info: TumorInfo) -> CompleteRecord:
+def complete_record(patient_info: PatientInfo, tumor_info: TumorInfo) -> BaseRecord:
     """Fixture for a sample CompleteRecord instance."""
-    return CompleteRecord(
+    return BaseRecord(
         patient=PatientRecord(_=patient_info),
         tumor=TumorRecord(_=tumor_info),
     )
 
 
-def test_complete_record(complete_record: CompleteRecord) -> None:
+def test_complete_record(complete_record: BaseRecord) -> None:
     """Test the CompleteRecord schema."""
     assert complete_record.patient.info.id == "12345", "Patient ID does not match"
