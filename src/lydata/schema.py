@@ -4,10 +4,38 @@ Based on such a schema, pandera can create a DataFrameSchema to validate lyDATA 
 Also, it may be used to create a HTML form to enter patient data.
 """
 
-from datetime import date
-from typing import Literal
+from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from typing import Any, Literal
+
+import pandas as pd
+from pydantic import (
+    BaseModel,
+    Field,
+    PastDate,
+    create_model,
+    field_validator,
+    model_validator,
+)
+
+_LNLS = [
+    "I",
+    "Ia",
+    "Ib",
+    "II",
+    "IIa",
+    "IIb",
+    "III",
+    "IV",
+    "V",
+    "Va",
+    "Vb",
+    "VI",
+    "VII",
+    "VIII",
+    "IX",
+    "X",
+]
 
 
 class PatientInfo(BaseModel):
@@ -21,7 +49,7 @@ class PatientInfo(BaseModel):
         le=120,
         description="Age of the patient at the time of diagnosis in years.",
     )
-    diagnose_date: date = Field(description="Date of diagnosis of the patient.")
+    diagnose_date: PastDate = Field(description="Date of diagnosis of the patient.")
     alcohol_abuse: bool = Field(description="Whether the patient abused alcohol.")
     nicotine_abuse: bool = Field(description="Whether the patient abused nicotine.")
     pack_years: float | None = Field(
@@ -42,7 +70,7 @@ class PatientInfo(BaseModel):
     )
     n_stage: int = Field(
         ge=0,
-        le=4,
+        le=3,
         description="N stage of the patient according to the TNM classification.",
     )
     m_stage: int | None = Field(
@@ -50,6 +78,20 @@ class PatientInfo(BaseModel):
         le=1,
         description="M stage of the patient according to the TNM classification.",
     )
+
+    @field_validator("pack_years", "hpv_status", "m_stage", mode="before")
+    @classmethod
+    def nan_to_none(cls, value: Any) -> Any:
+        """Convert NaN values to None."""
+        return None if pd.isna(value) else value
+
+    @model_validator(mode="after")
+    def check_nicotine_and_pack_years(self) -> PatientInfo:
+        """Ensure that if nicotine abuse is False, pack_years is not > 0."""
+        if not self.nicotine_abuse and (
+            self.pack_years is not None and self.pack_years > 0
+        ):
+            raise ValueError("If nicotine abuse is False, pack_years cannot be > 0.")
 
 
 class PatientRecord(BaseModel):
@@ -69,7 +111,7 @@ class TumorInfo(BaseModel):
         description="ICD-O-3 subsite of the primary tumor.",
         pattern=r"C[0-9]{2}(\.[0-9X])?",
     )
-    central: bool = Field(
+    central: bool | None = Field(
         description="Whether the tumor is located on the mid-sagittal line.",
         default=False,
     )
@@ -92,6 +134,12 @@ class TumorInfo(BaseModel):
         description="T stage of the tumor according to the TNM classification.",
     )
 
+    @field_validator("central", "volume", mode="before")
+    @classmethod
+    def nan_to_none(cls, value: Any) -> Any:
+        """Convert NaN values to None."""
+        return None if pd.isna(value) else value
+
 
 class TumorRecord(BaseModel):
     """A tumor record of a patient.
@@ -102,10 +150,50 @@ class TumorRecord(BaseModel):
     info: TumorInfo = Field(default_factory=TumorInfo, alias="_")
 
 
-class CompleteRecord(BaseModel):
-    """A complete patient record.
+def create_lnl_field(lnl: str) -> tuple[str, tuple[bool | None, Field]]:
+    """Create a field for a specific lymph node level."""
+    return (
+        f"ln_{lnl.lower()}",
+        (bool | None, Field(default=None, description=f"LN {lnl} involvement")),
+    )
 
-    This combines the patient and tumor records.
+
+class ModalityInfo(BaseModel):
+    """Basic info about a diagnostic/pathological modality.
+
+    Contains only the date of the modality as of now.
+    """
+
+    date: PastDate | None = Field(
+        description="Date of the diagnostic or pathological modality.",
+        default=None,
+    )
+
+
+UnilateralInvolvementInfo = create_model(
+    "UnilateralInvolvementInfo",
+    **{lnl: create_lnl_field(lnl) for lnl in _LNLS},
+)
+
+class ModalityRecord(BaseModel):
+    """A record of the involvement patterns of a diagnostic or pathological modality."""
+
+    info: ModalityInfo = Field(default_factory=ModalityInfo)
+    ipsi: UnilateralInvolvementInfo = Field(
+        description="Unilateral involvement of the ipsilateral side.",
+        default_factory=UnilateralInvolvementInfo,
+    )
+    contra: UnilateralInvolvementInfo = Field(
+        description="Unilateral involvement of the contralateral side.",
+        default_factory=UnilateralInvolvementInfo,
+    )
+
+
+class BaseRecord(BaseModel):
+    """A basic record of a patient.
+
+    Contains at least the patient and tumor information in the same nested form
+    as the data represents it.
     """
 
     patient: PatientRecord = Field(default_factory=PatientRecord)
