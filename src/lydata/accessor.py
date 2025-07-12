@@ -881,11 +881,11 @@ class LyDataAccessor:
         original DataFrame.
 
         >>> df = pd.DataFrame({
-        ...     ('MRI', 'ipsi'  , 'Ia' ): [True , False, False, None],
-        ...     ('MRI', 'ipsi'  , 'Ib' ): [False, True , False, None],
-        ...     ('MRI', 'contra', 'IIa'): [False, False, None , None],
-        ...     ('MRI', 'contra', 'IIb'): [False, True , True , None],
-        ...     ('CT' , 'ipsi'  , 'I'  ): [True , False, False, None],
+        ...     ('MRI', 'ipsi'  , 'Ia' ): [True , False, False, None, None ],
+        ...     ('MRI', 'ipsi'  , 'Ib' ): [False, True , False, None, False],
+        ...     ('MRI', 'contra', 'IIa'): [False, False, None , None, None ],
+        ...     ('MRI', 'contra', 'IIb'): [False, True , True , None, False],
+        ...     ('CT' , 'ipsi'  , 'I'  ): [True , False, False, None, None ],
         ... })
         >>> df.ly.infer_superlevels(modalities=["MRI"]) # doctest: +NORMALIZE_WHITESPACE
              MRI
@@ -895,6 +895,7 @@ class LyDataAccessor:
         1   True   True
         2  False   True
         3   None   None
+        4   None   None
         """
         modalities = modalities or list(get_default_modalities().keys())
         sides = sides or ["ipsi", "contra"]
@@ -912,14 +913,14 @@ class LyDataAccessor:
             sublevel_cols = [(modality, side, sublevel) for sublevel in sublevels]
 
             try:
-                are_all_healthy = ~self._obj[sublevel_cols].any(axis=1)
+                is_unknown = self._obj[sublevel_cols].isna().any(axis=1)
                 is_any_involved = self._obj[sublevel_cols].any(axis=1)
-                is_unknown = self._obj[sublevel_cols].isna().all(axis=1)
+                are_all_healthy = ~is_unknown & ~is_any_involved
             except KeyError:
                 continue
 
             result.loc[are_all_healthy, (modality, side, superlevel)] = False
-            result.loc[is_any_involved, (modality, side, superlevel)] = True
             result.loc[is_unknown, (modality, side, superlevel)] = None
+            result.loc[is_any_involved, (modality, side, superlevel)] = True
 
         return result
