@@ -881,11 +881,11 @@ class LyDataAccessor:
         original DataFrame.
 
         >>> df = pd.DataFrame({
-        ...     ('MRI', 'ipsi'  , 'Ia' ): [True , False, False, None],
-        ...     ('MRI', 'ipsi'  , 'Ib' ): [False, True , False, None],
-        ...     ('MRI', 'contra', 'IIa'): [False, False, None , None],
-        ...     ('MRI', 'contra', 'IIb'): [False, True , True , None],
-        ...     ('CT' , 'ipsi'  , 'I'  ): [True , False, False, None],
+        ...     ('MRI', 'ipsi'  , 'Ia' ): [True , False, False, None, None ],
+        ...     ('MRI', 'ipsi'  , 'Ib' ): [False, True , False, None, False],
+        ...     ('MRI', 'contra', 'IIa'): [False, False, None , None, None ],
+        ...     ('MRI', 'contra', 'IIb'): [False, True , True , None, False],
+        ...     ('CT' , 'ipsi'  , 'I'  ): [True , False, False, None, None ],
         ... })
         >>> df.ly.infer_superlevels(modalities=["MRI"]) # doctest: +NORMALIZE_WHITESPACE
              MRI
@@ -895,6 +895,7 @@ class LyDataAccessor:
         1   True   True
         2  False   True
         3   None   None
+        4   None   None
         """
         modalities = modalities or list(get_default_modalities().keys())
         sides = sides or ["ipsi", "contra"]
