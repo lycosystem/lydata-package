@@ -913,14 +913,14 @@ class LyDataAccessor:
             sublevel_cols = [(modality, side, sublevel) for sublevel in sublevels]
 
             try:
-                are_all_healthy = ~self._obj[sublevel_cols].any(axis=1)
+                is_unknown = self._obj[sublevel_cols].isna().any(axis=1)
                 is_any_involved = self._obj[sublevel_cols].any(axis=1)
-                is_unknown = self._obj[sublevel_cols].isna().all(axis=1)
+                are_all_healthy = ~is_unknown & ~is_any_involved
             except KeyError:
                 continue
 
             result.loc[are_all_healthy, (modality, side, superlevel)] = False
-            result.loc[is_any_involved, (modality, side, superlevel)] = True
             result.loc[is_unknown, (modality, side, superlevel)] = None
+            result.loc[is_any_involved, (modality, side, superlevel)] = True
 
         return result
