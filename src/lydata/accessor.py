@@ -836,13 +836,18 @@ class LyDataAccessor:
         2  False  False   None   None  False  False
         3   None   None   None   None   None   None
         """
-        modalities = modalities or list(get_default_modalities().keys())
-        sides = sides or ["ipsi", "contra"]
-        subdivisions = subdivisions or {
-            "I": ["a", "b"],
-            "II": ["a", "b"],
-            "V": ["a", "b"],
-        }
+        if modalities is None:
+            modalities = list(get_default_modalities().keys())
+
+        if sides is None:
+            sides = ["ipsi", "contra"]
+
+        if subdivisions is None:
+            subdivisions = {
+                "I": ["a", "b"],
+                "II": ["a", "b"],
+                "V": ["a", "b"],
+            }
 
         result = self._obj.copy().drop(self._obj.columns, axis=1)
 
@@ -897,13 +902,18 @@ class LyDataAccessor:
         3   None   None
         4   None   None
         """
-        modalities = modalities or list(get_default_modalities().keys())
-        sides = sides or ["ipsi", "contra"]
-        subdivisions = subdivisions or {
-            "I": ["a", "b"],
-            "II": ["a", "b"],
-            "V": ["a", "b"],
-        }
+        if modalities is None:
+            modalities = list(get_default_modalities().keys())
+
+        if sides is None:
+            sides = ["ipsi", "contra"]
+
+        if subdivisions is None:
+            subdivisions = {
+                "I": ["a", "b"],
+                "II": ["a", "b"],
+                "V": ["a", "b"],
+            }
 
         result = self._obj.copy().drop(self._obj.columns, axis=1)
 
