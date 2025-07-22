@@ -164,7 +164,7 @@ def get_default_column_map_old() -> _ColumnMap:
 
 
 def _new_from_old(long_name: tuple[str, str, str]) -> tuple[str, str, str]:
-    """Convert an old long name to a new long name.
+    """Convert an old long key name to a new long key name.
 
     >>> _new_from_old(("patient", "#", "neck_dissection"))
     ('patient', 'info', 'neck_dissection')
@@ -177,6 +177,12 @@ def _new_from_old(long_name: tuple[str, str, str]) -> tuple[str, str, str]:
     if (start == "patient" and middle == "#") or (start == "tumor" and middle == "1"):
         middle = "info"
     return (start, middle, end)
+
+
+def is_old(dataset: pd.DataFrame) -> bool:
+    """Check if the dataset uses the old column names."""
+    second_lvl_headers = dataset.columns.get_level_values(1)
+    return "#" in second_lvl_headers or "1" in second_lvl_headers
 
 
 def get_default_column_map_new() -> _ColumnMap:
