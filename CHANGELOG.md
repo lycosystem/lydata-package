@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.3] - 2025-07-22
+
+### 🚀 Features
+
+- Add simple utility to detect if dataset uses old 2nd level headers.
+
+### 💼 Other
+
+- Make `use_github=True` default everywhere
+- Simplify `Q`'s query execution a bit
+
 ## [0.3.2] - 2025-07-22
 
 ### 🚀 Features

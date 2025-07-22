@@ -143,7 +143,7 @@ class LyDataset(BaseModel):
 
     def get_dataframe(
         self,
-        use_github: bool = False,
+        use_github: bool = True,
         token: str | None = None,
         user: str | None = None,
         password: str | None = None,
