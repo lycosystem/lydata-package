@@ -166,11 +166,11 @@ def get_default_column_map_old() -> _ColumnMap:
 def _new_from_old(long_name: tuple[str, str, str]) -> tuple[str, str, str]:
     """Convert an old long name to a new long name.
 
-    >>> new_from_old(("patient", "#", "neck_dissection"))
+    >>> _new_from_old(("patient", "#", "neck_dissection"))
     ('patient', 'info', 'neck_dissection')
-    >>> new_from_old(("tumor", "1", "t_stage"))
+    >>> _new_from_old(("tumor", "1", "t_stage"))
     ('tumor', 'info', 't_stage')
-    >>> new_from_old(("a", "b", "c"))
+    >>> _new_from_old(("a", "b", "c"))
     ('a', 'b', 'c')
     """
     start, middle, end = long_name
