@@ -158,8 +158,25 @@ def get_default_column_map_old() -> _ColumnMap:
             _ColumnSpec("subsite", ("tumor", "1", "subsite")),
             _ColumnSpec("volume", ("tumor", "1", "volume")),
             _ColumnSpec("central", ("tumor", "1", "central")),
+            _ColumnSpec("side", ("tumor", "1", "side")),
         ]
     )
+
+
+def _new_from_old(long_name: tuple[str, str, str]) -> tuple[str, str, str]:
+    """Convert an old long name to a new long name.
+
+    >>> new_from_old(("patient", "#", "neck_dissection"))
+    ('patient', 'info', 'neck_dissection')
+    >>> new_from_old(("tumor", "1", "t_stage"))
+    ('tumor', 'info', 't_stage')
+    >>> new_from_old(("a", "b", "c"))
+    ('a', 'b', 'c')
+    """
+    start, middle, end = long_name
+    if (start == "patient" and middle == "#") or (start == "tumor" and middle == "1"):
+        middle = "info"
+    return (start, middle, end)
 
 
 def get_default_column_map_new() -> _ColumnMap:
@@ -187,23 +204,8 @@ def get_default_column_map_new() -> _ColumnMap:
     """
     return _ColumnMap.from_list(
         [
-            _ColumnSpec("id", ("patient", "info", "id")),
-            _ColumnSpec("institution", ("patient", "info", "institution")),
-            _ColumnSpec("sex", ("patient", "info", "sex")),
-            _ColumnSpec("age", ("patient", "info", "age")),
-            _ColumnSpec("weight", ("patient", "info", "weight")),
-            _ColumnSpec("date", ("patient", "info", "diagnose_date")),
-            _ColumnSpec("surgery", ("patient", "info", "neck_dissection")),
-            _ColumnSpec("hpv", ("patient", "info", "hpv_status")),
-            _ColumnSpec("smoke", ("patient", "info", "nicotine_abuse")),
-            _ColumnSpec("alcohol", ("patient", "info", "alcohol_abuse")),
-            _ColumnSpec("t_stage", ("tumor", "info", "t_stage")),
-            _ColumnSpec("n_stage", ("patient", "info", "n_stage")),
-            _ColumnSpec("m_stage", ("patient", "info", "m_stage")),
-            _ColumnSpec("midext", ("tumor", "info", "extension")),
-            _ColumnSpec("subsite", ("tumor", "info", "subsite")),
-            _ColumnSpec("volume", ("tumor", "info", "volume")),
-            _ColumnSpec("central", ("tumor", "info", "central")),
+            _ColumnSpec(cs.short, _new_from_old(cs.long))
+            for cs in get_default_column_map_old()
         ]
     )
 
