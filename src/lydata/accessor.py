@@ -162,7 +162,6 @@ class Q(CombineQMixin):
         self.colname = column
         self.operator = operator
         self.value = value
-        self._column_map = get_default_column_map_old()
 
     def __repr__(self) -> str:
         """Return a string representation of the query."""
@@ -183,12 +182,7 @@ class Q(CombineQMixin):
         2     True
         Name: col2, dtype: bool
         """
-        try:
-            colname = self._column_map.from_short[self.colname].long
-        except KeyError:
-            colname = self.colname
-
-        column = df[colname]
+        column = df.ly[self.colname]
 
         if callable(self.value):
             return self.value(column)
