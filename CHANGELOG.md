@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.2] - 2025-07-22
+
+### 🚀 Features
+
+- Work with new 2nd level headers (see [this lyDATA issue](https://github.com/lycosystem/lydata/issues/21))
+- Add `side` as short column to `ly` accessor
+
 ## [0.3.1] - 2025-07-12
 
 ### 🐛 Bug Fixes
