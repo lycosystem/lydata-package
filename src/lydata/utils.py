@@ -66,7 +66,15 @@ def update_and_expand(
 
 @dataclass
 class _ColumnSpec:
-    """Class for specifying column names and aggfuncs."""
+    """Class for specifying column names and aggfuncs.
+
+    This serves a dual purpose:
+
+    1. It is a simple container that ties together a short name and a long name. For
+       this we could have used a `namedtuple` as well.
+    2. Every `_ColumnSpec` is also an aggregation function in itself. This is used in
+       the :py:meth:`~lydata.accessor.LyDataAccessor.stats` method.
+    """
 
     short: str
     long: tuple[str, str, str]
@@ -108,14 +116,18 @@ class _ColumnMap:
         return iter(self.from_short.values())
 
 
-def get_default_column_map() -> _ColumnMap:
-    """Get the default column map.
+def get_default_column_map_old() -> _ColumnMap:
+    """Get the old default column map.
 
     This map defines which short column names can be used to access columns in the
     DataFrames.
 
     >>> from lydata import accessor, loader
-    >>> df = next(loader.load_datasets(institution="usz"))
+    >>> df = next(loader.load_datasets(
+    ...     institution="usz",
+    ...     repo_name="lycosystem/lydata.private",
+    ...     ref="ab04379a36b6946306041d1d38ad7e97df8ee7ba",
+    ... ))
     >>> df.ly.surgery   # doctest: +ELLIPSIS
     0      False
     ...
@@ -146,6 +158,60 @@ def get_default_column_map() -> _ColumnMap:
             _ColumnSpec("subsite", ("tumor", "1", "subsite")),
             _ColumnSpec("volume", ("tumor", "1", "volume")),
             _ColumnSpec("central", ("tumor", "1", "central")),
+            _ColumnSpec("side", ("tumor", "1", "side")),
+        ]
+    )
+
+
+def _new_from_old(long_name: tuple[str, str, str]) -> tuple[str, str, str]:
+    """Convert an old long key name to a new long key name.
+
+    >>> _new_from_old(("patient", "#", "neck_dissection"))
+    ('patient', 'info', 'neck_dissection')
+    >>> _new_from_old(("tumor", "1", "t_stage"))
+    ('tumor', 'info', 't_stage')
+    >>> _new_from_old(("a", "b", "c"))
+    ('a', 'b', 'c')
+    """
+    start, middle, end = long_name
+    if (start == "patient" and middle == "#") or (start == "tumor" and middle == "1"):
+        middle = "info"
+    return (start, middle, end)
+
+
+def is_old(dataset: pd.DataFrame) -> bool:
+    """Check if the dataset uses the old column names."""
+    second_lvl_headers = dataset.columns.get_level_values(1)
+    return "#" in second_lvl_headers or "1" in second_lvl_headers
+
+
+def get_default_column_map_new() -> _ColumnMap:
+    """Get the old default column map.
+
+    This map defines which short column names can be used to access columns in the
+    DataFrames.
+
+    >>> from lydata import accessor, loader
+    >>> df = next(loader.load_datasets(
+    ...     institution="usz",
+    ...     repo_name="lycosystem/lydata.private",
+    ...     ref="ce2ac255b8aec7443375b610e5254a46bf236a46",
+    ... ))
+    >>> df.ly.surgery   # doctest: +ELLIPSIS
+    0      False
+    ...
+    286    False
+    Name: (patient, info, neck_dissection), Length: 287, dtype: bool
+    >>> df.ly.smoke   # doctest: +ELLIPSIS
+    0       True
+    ...
+    286     True
+    Name: (patient, info, nicotine_abuse), Length: 287, dtype: bool
+    """
+    return _ColumnMap.from_list(
+        [
+            _ColumnSpec(cs.short, _new_from_old(cs.long))
+            for cs in get_default_column_map_old()
         ]
     )
 

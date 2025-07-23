@@ -116,7 +116,7 @@ def validate_datasets(
     year: int | str = "*",
     institution: str = "*",
     subsite: str = "*",
-    use_github: bool = False,
+    use_github: bool = True,
     repo: str = "lycosystem/lydata",
     ref: str = "main",
     **kwargs,

@@ -123,14 +123,14 @@ class LyDataset(BaseModel):
         This method always tries to fetch the most recent version of the file.
 
         >>> conf = LyDataset(
-        ...     year=2023,
+        ...     year=2025,
         ...     institution="usz",
         ...     subsite="hypopharynx-larynx",
         ...     repo_name="lycosystem/lydata.private",
-        ...     ref="2023-usz-hypopharynx-larynx",
+        ...     ref="2025-usz-hypopharynx-larynx",
         ... )
         >>> conf.get_content_file()
-        ContentFile(path="2023-usz-hypopharynx-larynx/data.csv")
+        ContentFile(path="2025-usz-hypopharynx-larynx/data.csv")
         """
         if self._content_file is not None:
             if self._content_file.update():
@@ -143,7 +143,7 @@ class LyDataset(BaseModel):
 
     def get_dataframe(
         self,
-        use_github: bool = False,
+        use_github: bool = True,
         token: str | None = None,
         user: str | None = None,
         password: str | None = None,
@@ -262,7 +262,7 @@ def available_datasets(
      '2025-hvh-oropharynx']
     >>> avail_gen = available_datasets(
     ...     repo_name="lycosystem/lydata.private",
-    ...     ref="2024-umcg-hypopharynx-larynx",
+    ...     ref="2025-umcg-hypopharynx-larynx",
     ...     use_github=True,
     ... )
     >>> sorted([ds.name for ds in avail_gen])   # doctest: +NORMALIZE_WHITESPACE
@@ -270,7 +270,7 @@ def available_datasets(
      '2021-usz-oropharynx',
      '2023-clb-multisite',
      '2023-isb-multisite',
-     '2024-umcg-hypopharynx-larynx']
+     '2025-umcg-hypopharynx-larynx']
     >>> avail_gen = available_datasets(
     ...     institution="hvh",
     ...     ref="6ac98d",

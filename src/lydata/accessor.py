@@ -45,7 +45,8 @@ import pandas.api.extensions as pd_ext
 
 from lydata.utils import (
     ModalityConfig,
-    get_default_column_map,
+    get_default_column_map_new,
+    get_default_column_map_old,
     get_default_modalities,
 )
 from lydata.validator import construct_schema
@@ -161,7 +162,6 @@ class Q(CombineQMixin):
         self.colname = column
         self.operator = operator
         self.value = value
-        self._column_map = get_default_column_map()
 
     def __repr__(self) -> str:
         """Return a string representation of the query."""
@@ -182,12 +182,7 @@ class Q(CombineQMixin):
         2     True
         Name: col2, dtype: bool
         """
-        try:
-            colname = self._column_map.from_short[self.colname].long
-        except KeyError:
-            colname = self.colname
-
-        column = df[colname]
+        column = df.ly[self.colname]
 
         if callable(self.value):
             return self.value(column)
@@ -536,7 +531,7 @@ def _expand_mapping(
     >>> _expand_mapping({'age': 'foo', 'hpv': 'bar'})
     {('patient', '#', 'age'): 'foo', ('patient', '#', 'hpv_status'): 'bar'}
     """
-    _colname_map = colname_map or get_default_column_map().from_short
+    _colname_map = colname_map or get_default_column_map_old().from_short
     expanded_map = {}
 
     for colname, func in short_map.items():
@@ -560,7 +555,8 @@ class LyDataAccessor:
     def __init__(self, obj: pd.DataFrame) -> None:
         """Initialize the accessor with a DataFrame."""
         self._obj = obj
-        self._column_map = get_default_column_map()
+        self._column_map_old = get_default_column_map_old()
+        self._column_map_new = get_default_column_map_new()
 
     def __contains__(self, key: str) -> bool:
         """Check if a column is contained in the DataFrame.
@@ -572,14 +568,32 @@ class LyDataAccessor:
         False
         >>> ("patient", "#", "age") in df.ly
         True
+        >>> df = pd.DataFrame({("patient", "info", "age"): [61, 52, 73]})
+        >>> "age" in df.ly
+        True
+        >>> "foo" in df.ly
+        False
+        >>> ("patient", "info", "age") in df.ly
+        True
         """
-        _key = self._get_safe_long(key)
-        return _key in self._obj
+        _key_old = self._get_safe_long_old(key)
+        _key_new = self._get_safe_long_new(key)
+        return _key_new in self._obj or _key_old in self._obj
 
     def __getitem__(self, key: str) -> pd.Series:
         """Allow column access by short name, too."""
-        _key = self._get_safe_long(key)
-        return self._obj[_key]
+        _key_old = self._get_safe_long_old(key)
+        _key_new = self._get_safe_long_new(key)
+
+        try:
+            return self._obj[_key_new]
+        except KeyError as err_from_new:
+            try:
+                return self._obj[_key_old]
+            except KeyError:
+                raise KeyError(
+                    f"Neither '{_key_new}' nor '{_key_old}' found in DataFrame."
+                ) from err_from_new
 
     def __getattr__(self, name: str) -> Any:
         """Access columns also by short name.
@@ -590,6 +604,12 @@ class LyDataAccessor:
         1    52
         2    73
         Name: (patient, #, age), dtype: int64
+        >>> df = pd.DataFrame({("patient", "info", "age"): [61, 52, 73]})
+        >>> df.ly.age
+        0    61
+        1    52
+        2    73
+        Name: (patient, info, age), dtype: int64
         >>> df.ly.foo
         Traceback (most recent call last):
             ...
@@ -600,9 +620,13 @@ class LyDataAccessor:
         except KeyError as key_err:
             raise AttributeError(f"Attribute {name!r} not found.") from key_err
 
-    def _get_safe_long(self, key: Any) -> tuple[str, str, str]:
-        """Get the long column name or return the input."""
-        return getattr(self._column_map.from_short.get(key), "long", key)
+    def _get_safe_long_old(self, key: Any) -> tuple[str, str, str]:
+        """Get the old long column name or return the input."""
+        return getattr(self._column_map_old.from_short.get(key), "long", key)
+
+    def _get_safe_long_new(self, key: Any) -> tuple[str, str, str]:
+        """Get the new long column name or return the input."""
+        return getattr(self._column_map_new.from_short.get(key), "long", key)
 
     def validate(self, modalities: list[str] | None = None) -> pd.DataFrame:
         """Validate the DataFrame against the lydata schema.
@@ -697,7 +721,7 @@ class LyDataAccessor:
         The ``agg_funcs`` argument is a mapping of column names to functions that
         receive a :py:class:`pd.Series` and return a :py:class:`pd.Series`. The default
         is a useful selection of statistics for the most common columns. E.g., for the
-        column ``('patient', '#', 'age')`` (or its short column name ``age``), the
+        column ``('patient', 'info', 'age')`` (or its short column name ``age``), the
         default function returns the value counts.
 
         The ``use_shortnames`` argument determines whether the output should use the
@@ -715,8 +739,17 @@ class LyDataAccessor:
         {'age': {61: 2, 52: 1, 73: 1},
          'hpv': {True: 2, False: 1, None: 1},
          't_stage': {2: 2, 3: 1, 1: 1}}
+        >>> df = pd.DataFrame({
+        ...     ('patient', 'info', 'age'): [61, 52, 73, 61],
+        ...     ('patient', 'info', 'hpv_status'): [True, False, None, True],
+        ...     ('tumor', 'info', 't_stage'): [2, 3, 1, 2],
+        ... })
+        >>> df.ly.stats()   # doctest: +NORMALIZE_WHITESPACE
+        {'age': {61: 2, 52: 1, 73: 1},
+         'hpv': {True: 2, False: 1, None: 1},
+         't_stage': {2: 2, 3: 1, 1: 1}}
         """
-        _agg_funcs = self._column_map.from_short.copy()
+        _agg_funcs = self._column_map_new.from_short.copy()
         _agg_funcs.update(agg_funcs or {})
         stats = {}
 
@@ -725,8 +758,8 @@ class LyDataAccessor:
                 continue
 
             column = self[colname]
-            if use_shortnames and colname in self._column_map.from_long:
-                colname = self._column_map.from_long[colname].short
+            if use_shortnames and colname in self._column_map_old.from_long:
+                colname = self._column_map_old.from_long[colname].short
 
             stats[colname] = getattr(func(column), f"to_{out_format}")()
 
