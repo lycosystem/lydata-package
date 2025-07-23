@@ -36,13 +36,12 @@ from __future__ import annotations
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
-from itertools import product
 from typing import Any, Literal
 
-import numpy as np
 import pandas as pd
 import pandas.api.extensions as pd_ext
 
+from lydata.augmentor import combine_and_augment_levels
 from lydata.utils import (
     ModalityConfig,
     get_default_column_map_new,
@@ -485,62 +484,6 @@ def align_diagnoses(
     return diagnosis_stack
 
 
-def _stack_to_float_matrix(diagnosis_stack: list[pd.DataFrame]) -> np.ndarray:
-    """Convert diagnosis stack to 3D array of floats with ``Nones`` as ``np.nan``."""
-    diagnosis_matrix = np.array(diagnosis_stack)
-    diagnosis_matrix[pd.isna(diagnosis_matrix)] = np.nan
-    return np.astype(diagnosis_matrix, float)
-
-
-def _evaluate_likelihood_ratios(
-    diagnosis_matrix: np.ndarray,
-    sensitivities: np.ndarray,
-    specificities: np.ndarray,
-    method: Literal["max_llh", "rank"],
-) -> np.ndarray:
-    """Compare the likelihoods of true/false diagnoses using the given ``method``.
-
-    The ``diagnosis_matrix`` is a 3D array of shape ``(n_modalities, n_patients,
-    n_levels)``. The ``sensitivities`` and ``specificities`` are 1D arrays of shape
-    ``(n_modalities,)``. When choosing the ``method="max_llh"``, the likelihood of each
-    diagnosis is combined into one likelihood for each patient and level. With
-    ``method="rank"``, the most trustworthy diagnosis is chosen for each patient and
-    level.
-    """
-    true_pos = sensitivities[:, None, None] * diagnosis_matrix
-    false_neg = (1 - sensitivities[:, None, None]) * (1 - diagnosis_matrix)
-    true_neg = specificities[:, None, None] * (1 - diagnosis_matrix)
-    false_pos = (1 - specificities[:, None, None]) * diagnosis_matrix
-
-    if method not in {"max_llh", "rank"}:
-        raise ValueError(f"Unknown method {method}")
-
-    agg_func = np.nanprod if method == "max_llh" else np.nanmax
-    true_llh = agg_func(true_pos + false_neg, axis=0)
-    false_llh = agg_func(true_neg + false_pos, axis=0)
-
-    return true_llh >= false_llh
-
-
-def _expand_mapping(
-    short_map: dict[str, Any],
-    colname_map: dict[str | tuple[str, str, str], Any] | None = None,
-) -> dict[tuple[str, str, str], Any]:
-    """Expand the column map to full column names.
-
-    >>> _expand_mapping({'age': 'foo', 'hpv': 'bar'})
-    {('patient', '#', 'age'): 'foo', ('patient', '#', 'hpv_status'): 'bar'}
-    """
-    _colname_map = colname_map or get_default_column_map_old().from_short
-    expanded_map = {}
-
-    for colname, func in short_map.items():
-        expanded_colname = getattr(_colname_map.get(colname), "long", colname)
-        expanded_map[expanded_colname] = func
-
-    return expanded_map
-
-
 AggFuncType = dict[str | tuple[str, str, str], Callable[[pd.Series], pd.Series]]
 
 
@@ -765,12 +708,14 @@ class LyDataAccessor:
 
         return stats
 
-    def _filter_and_sort_modalities(
+    def _filter_modalities(
         self,
         modalities: dict[str, ModalityConfig] | None = None,
     ) -> dict[str, ModalityConfig]:
-        """Return only those ``modalities`` present in data and sorted as in data."""
-        modalities = modalities or get_default_modalities()
+        """Return only those ``modalities`` present in data."""
+        if modalities is None:
+            modalities = get_default_modalities()
+
         return {
             modality_name: modality_config
             for modality_name, modality_config in modalities.items()
@@ -808,50 +753,22 @@ class LyDataAccessor:
         3   False
         4    None
         """
-        modalities = self._filter_and_sort_modalities(modalities)
+        modalities = self._filter_modalities(modalities)
 
-        diagnosis_stack = align_diagnoses(self._obj, list(modalities.keys()))
-        diagnosis_matrix = _stack_to_float_matrix(diagnosis_stack)
-        all_nan_mask = np.all(np.isnan(diagnosis_matrix), axis=0)
-
-        result = _evaluate_likelihood_ratios(
-            diagnosis_matrix=diagnosis_matrix,
-            sensitivities=np.array([mod.sens for mod in modalities.values()]),
-            specificities=np.array([mod.spec for mod in modalities.values()]),
+        return combine_and_augment_levels(
+            diagnoses=[self._obj[mod] for mod in modalities.keys()],
+            specificities=[mod.spec for mod in modalities.values()],
+            sensitivities=[mod.sens for mod in modalities.values()],
             method=method,
+            subdivisions={},
         )
-        result = np.astype(result, object)
-        result[all_nan_mask] = None
-        return pd.DataFrame(result, columns=diagnosis_stack[0].columns)
 
-    def infer_sublevels(
+    def augment(
         self,
-        modalities: list[str] | None = None,
-        sides: list[Literal["ipsi", "contra"]] | None = None,
+        modality: str = "max_llh",
         subdivisions: dict[str, list[str]] | None = None,
     ) -> pd.DataFrame:
-        """Determine involvement status of an LNL's sublevels (e.g., IIa and IIb).
-
-        Some LNLs have sublevels, e.g., IIa and IIb. The involvement of these sublevels
-        is not always reported, but only the superlevel's status. This function infers
-        the status of the sublevels from the superlevel.
-
-        The sublevel's status is computed for the specified ``modalities``. If and what
-        sublevels a superlevel has, is specified in ``subdivisions``. The default
-        ``subdivisions`` argument looks like this:
-
-        .. code-block:: python
-
-            {
-                "I": ["a", "b"],
-                "II": ["a", "b"],
-                "V": ["a", "b"],
-            }
-
-        The resulting DataFrame will only contain the newly inferred sublevel columns
-        and only for those sublevels that were not already present in the DataFrame.
-        Thus, one can simply :py:meth:`~pandas.DataFrame.join` the original DataFrame
-        with the result.
+        """Complete the sub- and superlevel involvement columns.
 
         >>> df = pd.DataFrame({
         ...     ('MRI', 'ipsi'  , 'I' ): [True , False, False, None],
@@ -860,110 +777,20 @@ class LyDataAccessor:
         ...     ('MRI', 'ipsi'  , 'IV'): [False, False, True , None],
         ...     ('CT' , 'ipsi'  , 'I' ): [True , False, False, None],
         ... })
-        >>> df.ly.infer_sublevels(modalities=["MRI"])   # doctest: +NORMALIZE_WHITESPACE
-             MRI
-            ipsi                      contra
-              Ia     Ib    IIa    IIb     Ia     Ib
-        0   None   None  False  False  False  False
-        1  False  False  False  False   None   None
-        2  False  False   None   None  False  False
-        3   None   None   None   None   None   None
+        >>> df.ly.augment(modality="MRI")   # doctest: +NORMALIZE_WHITESPACE
+          contra                 ipsi
+               I     Ia     Ib      I     Ia     Ib     II    IIa    IIb     IV
+        0  False  False  False   True   None   None  False  False  False  False
+        1   True   None   None  False  False  False  False  False  False  False
+        2  False  False  False  False  False  False   True   None   None   True
+        3   None   None   None   None   None   None   None   None   None   None
         """
-        if modalities is None:
-            modalities = list(get_default_modalities().keys())
+        if modality not in self.get_modalities():
+            raise ValueError(f"Modality {modality!r} not found in DataFrame.")
 
-        if sides is None:
-            sides = ["ipsi", "contra"]
-
-        if subdivisions is None:
-            subdivisions = {
-                "I": ["a", "b"],
-                "II": ["a", "b"],
-                "V": ["a", "b"],
-            }
-
-        result = self._obj.copy().drop(self._obj.columns, axis=1)
-
-        loop_combinations = product(modalities, sides, subdivisions.items())
-        for modality, side, (superlevel, subids) in loop_combinations:
-            try:
-                is_healthy = self._obj[modality, side, superlevel] == False  # noqa
-            except KeyError:
-                continue
-
-            for subid in subids:
-                sublevel = superlevel + subid
-                result.loc[is_healthy, (modality, side, sublevel)] = False
-                result.loc[~is_healthy, (modality, side, sublevel)] = None
-
-        return result
-
-    def infer_superlevels(
-        self,
-        modalities: list[str] | None = None,
-        sides: list[Literal["ipsi", "contra"]] | None = None,
-        subdivisions: dict[str, list[str]] | None = None,
-    ) -> pd.DataFrame:
-        """Determine involvement status of an LNL's superlevel (e.g., II).
-
-        Some LNLs have sublevels, e.g., IIa and IIb. In real data, sometimes the
-        sublevels are reported, sometimes only the superlevel. This function infers the
-        status of the superlevel from the sublevels.
-
-        The superlevel's status is computed for the specified ``modalities``. If and
-        what sublevels a superlevel has, is specified in ``subdivisions``.
-
-        The resulting DataFrame will only contain the newly inferred superlevel columns
-        and only for those superlevels that were not already present in the DataFrame.
-        This way, it is straightforward to :py:meth:`~pandas.DataFrame.join` it with the
-        original DataFrame.
-
-        >>> df = pd.DataFrame({
-        ...     ('MRI', 'ipsi'  , 'Ia' ): [True , False, False, None, None ],
-        ...     ('MRI', 'ipsi'  , 'Ib' ): [False, True , False, None, False],
-        ...     ('MRI', 'contra', 'IIa'): [False, False, None , None, None ],
-        ...     ('MRI', 'contra', 'IIb'): [False, True , True , None, False],
-        ...     ('CT' , 'ipsi'  , 'I'  ): [True , False, False, None, None ],
-        ... })
-        >>> df.ly.infer_superlevels(modalities=["MRI"]) # doctest: +NORMALIZE_WHITESPACE
-             MRI
-            ipsi contra
-               I     II
-        0   True  False
-        1   True   True
-        2  False   True
-        3   None   None
-        4   None   None
-        """
-        if modalities is None:
-            modalities = list(get_default_modalities().keys())
-
-        if sides is None:
-            sides = ["ipsi", "contra"]
-
-        if subdivisions is None:
-            subdivisions = {
-                "I": ["a", "b"],
-                "II": ["a", "b"],
-                "V": ["a", "b"],
-            }
-
-        result = self._obj.copy().drop(self._obj.columns, axis=1)
-
-        loop_combinations = product(modalities, sides, subdivisions.items())
-        for modality, side, (superlevel, subids) in loop_combinations:
-            sublevels = [superlevel + subid for subid in subids]
-            sublevel_cols = [(modality, side, sublevel) for sublevel in sublevels]
-
-            try:
-                is_unknown = self._obj[sublevel_cols].isna().any(axis=1)
-                is_any_involved = self._obj[sublevel_cols].any(axis=1)
-                are_all_healthy = ~is_unknown & ~is_any_involved
-            except KeyError:
-                continue
-
-            result.loc[are_all_healthy, (modality, side, superlevel)] = False
-            result.loc[is_unknown, (modality, side, superlevel)] = None
-            result.loc[is_any_involved, (modality, side, superlevel)] = True
-
-        return result
+        return combine_and_augment_levels(
+            diagnoses=[self._obj[modality]],
+            specificities=[1.0],  # Numbers here don't matter, as we only "combine"
+            sensitivities=[1.0],  # a single modality's involvement info.
+            subdivisions=subdivisions,
+        )
