@@ -1,4 +1,4 @@
-"""Module containing a custom accessor and helpers for querying lyDATA.
+"""Module containing a custom accessor for interacting with lyDATA tables.
 
 Because of the special three-level header of the lyDATA tables, it is sometimes
 cumbersome and lengthy to access the columns. While this is certainly necessary to
@@ -10,25 +10,13 @@ The main class in this module is the :py:class:`LyDataAccessor` class, which pro
 the above mentioned functionality. That way, accessing the age of all patients is now
 as easy as typing ``df.ly.age``.
 
-Beyond that, the module implements a convenient wat to query the
-:py:class:`~pandas.DataFrame`: The :py:class:`Q` object, that was inspired by Django's
-``Q`` object. It allows for more readable and modular queries, which can be combined
-with logical operators and reused across different DataFrames.
+Beyond that, we implement methods like :py:meth:`~LyDataAccessor.query` for filtering
+the DataFrame using reusable query objects (see the :py:module:`lydata.querier` module
+for more information), :py:meth:`~LyDataAccessor.stats` for computing common statistics
+that we use in our `LyProX`_ web app, and :py:meth:`~LyDataAccessor.combine` for
+combining diagnoses from different modalities into a single column.
 
-The :py:class:`Q` objects can be passed to the :py:meth:`LyDataAccessor.query` and
-:py:meth:`LyDataAccessor.portion` methods to filter the DataFrame or compute the
-:py:class:`QueryPortion` of rows that satisfy the query. Alternatively, any of these
-:py:class:`Q` objects have a method called :py:meth:`~Q.execute` that can be called with
-a :py:class:`~pandas.DataFrame` to get a boolean mask of the rows satisfying the query.
-
-Further, we implement methods like :py:meth:`~LyDataAccessor.combine`,
-:py:meth:`~LyDataAccessor.infer_sublevels`, and
-:py:meth:`~LyDataAccessor.infer_superlevels` to compute additional columns from the
-lyDATA tables. This is sometimes necessary, because not all data contains all the
-possibly necessary columns. E.g., in some cohorts we do have detailed sublevel
-information (i.e., IIa and IIb), while in others only the superlevel (II) is reported.
-In such a case, one can now simply call ``df.ly.infer_sublevels()`` to get the
-additional columns.
+.. _LyProX: https://lyprox.org/
 """
 
 from __future__ import annotations
@@ -36,372 +24,25 @@ from __future__ import annotations
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import pandas as pd
 import pandas.api.extensions as pd_ext
 
 from lydata.augmentor import combine_and_augment_levels
+from lydata.types import CanExecute
 from lydata.utils import (
     ModalityConfig,
+    _get_all_true,
     get_default_column_map_new,
     get_default_column_map_old,
     get_default_modalities,
 )
-from lydata.validator import construct_schema
 
 warnings.simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
 
 
-def _get_all_true(df: pd.DataFrame) -> pd.Series:
-    """Return a mask with all entries set to ``True``."""
-    return pd.Series([True] * len(df))
-
-
-class CombineQMixin:
-    """Mixin class for combining queries.
-
-    Four operators are defined for combining queries:
-
-    1. ``&`` for logical AND operations.
-        The returned object is an :py:class:`AndQ` instance and - when executed -
-        returns a boolean mask where both queries are satisfied. When the right-hand
-        side is ``None``, the left-hand side query object is returned unchanged.
-    2. ``|`` for logical OR operations.
-        The returned object is an :py:class:`OrQ` instance and - when executed -
-        returns a boolean mask where either query is satisfied. When the right-hand
-        side is ``None``, the left-hand side query object is returned unchanged.
-    3. ``~`` for inverting a query.
-        The returned object is a :py:class:`NotQ` instance and - when executed -
-        returns a boolean mask where the query is not satisfied.
-    4. ``==`` for checking if two queries are equal.
-        Two queries are equal if their column names, operators, and values are equal.
-        Note that this does not check if the queries are semantically equal, i.e., if
-        they would return the same result when executed.
-    """
-
-    def __and__(self, other: QTypes | None) -> AndQ:
-        """Combine two queries with a logical AND."""
-        return self if other is None else AndQ(self, other)
-
-    def __or__(self, other: QTypes | None) -> OrQ:
-        """Combine two queries with a logical OR."""
-        return self if other is None else OrQ(self, other)
-
-    def __invert__(self) -> NotQ:
-        """Negate the query."""
-        return NotQ(self)
-
-    def __eq__(self, value):
-        """Check if two queries are equal."""
-        return (
-            isinstance(value, self.__class__)
-            and self.colname == value.colname
-            and self.operator == value.operator
-            and self.value == value.value
-        )
-
-
-class Q(CombineQMixin):
-    """Combinable query object for filtering a DataFrame.
-
-    The syntax for this object is similar to Django's ``Q`` object. It can be used to
-    define queries in a more readable and modular way.
-
-    .. caution::
-
-        The column names are not checked upon instantiation. This is only done when the
-        query is executed. In fact, the :py:class:`Q` object does not even know about
-        the :py:class:`~pandas.DataFrame` it will be applied to in the beginning. On the
-        flip side, this means a query may be reused for different DataFrames.
-
-    The ``operator`` argument may be one of the following:
-
-    - ``'=='``: Checks if ``column`` values are equal to the ``value``.
-    - ``'<'``: Checks if ``column`` values are less than the ``value``.
-    - ``'<='``: Checks if ``column`` values are less than or equal to ``value``.
-    - ``'>'``: Checks if ``column`` values are greater than the ``value``.
-    - ``'>='``: Checks if ``column`` values are greater than or equal to ``value``.
-    - ``'!='``: Checks if ``column`` values are not equal to the ``value``. This is
-      equivalent to ``~Q(column, '==', value)``.
-    - ``'in'``: Checks if ``column`` values are in the list of ``value``. For this,
-      pandas' :py:meth:`~pandas.Series.isin` method is used.
-    - ``'contains'``: Checks if ``column`` values contain the string ``value``.
-      Here, pandas' :py:meth:`~pandas.Series.str.contains` method is used.
-
-    .. note::
-
-        During initialization, a private attribute ``_column_map`` is set to the
-        default column map returned by :py:func:`~lydata.utils.get_default_column_map`.
-        This is used to convert short column names to long ones. If one feels
-        adventurous, they may set this attribute to a custom column map containing
-        additional or other column short names. This could also be achieved by
-        subclassing the :py:class:`Q`. However, the attribute may change in the future,
-        and without notice.
-    """
-
-    _OPERATOR_MAP: dict[str, Callable[[pd.Series, Any], pd.Series]] = {
-        "==": lambda series, value: series == value,
-        "<": lambda series, value: series < value,
-        "<=": lambda series, value: series <= value,
-        ">": lambda series, value: series > value,
-        ">=": lambda series, value: series >= value,
-        "!=": lambda series, value: series != value,  # same as ~Q("col", "==", value)
-        "in": lambda series, value: series.isin(value),  # value is a list
-        "contains": lambda series, value: series.str.contains(value),  # value is a str
-    }
-
-    def __init__(
-        self,
-        column: str,
-        operator: Literal["==", "<", "<=", ">", ">=", "!=", "in", "contains"],
-        value: Any,
-    ) -> None:
-        """Create query object that can compare a ``column`` with a ``value``."""
-        self.colname = column
-        self.operator = operator
-        self.value = value
-
-    def __repr__(self) -> str:
-        """Return a string representation of the query."""
-        return f"Q({self.colname!r}, {self.operator!r}, {self.value!r})"
-
-    def execute(self, df: pd.DataFrame) -> pd.Series:
-        """Return a boolean mask where the query is satisfied for ``df``.
-
-        >>> df = pd.DataFrame({'col1': [1, 2, 3], 'col2': ['foo', 'bar', 'baz']})
-        >>> Q('col1', '<=', 2).execute(df)
-        0     True
-        1     True
-        2    False
-        Name: col1, dtype: bool
-        >>> Q('col2', 'contains', 'ba').execute(df)
-        0    False
-        1     True
-        2     True
-        Name: col2, dtype: bool
-        """
-        column = df.ly[self.colname]
-
-        if callable(self.value):
-            return self.value(column)
-
-        return self._OPERATOR_MAP[self.operator](column, self.value)
-
-
-class AndQ(CombineQMixin):
-    """Query object for combining two queries with a logical AND.
-
-    >>> df = pd.DataFrame({'col1': [1, 2, 3], 'col2': ['foo', 'bar', 'baz']})
-    >>> q1 = Q('col1', '!=', 3)
-    >>> q2 = Q('col2', 'contains', 'ba')
-    >>> and_q = q1 & q2
-    >>> print(and_q)
-    (Q('col1', '!=', 3) & Q('col2', 'contains', 'ba'))
-    >>> isinstance(and_q, AndQ)
-    True
-    >>> and_q.execute(df)
-    0    False
-    1     True
-    2    False
-    dtype: bool
-    >>> all((q1 & None).execute(df) == q1.execute(df))
-    True
-    """
-
-    def __init__(self, q1: QTypes, q2: QTypes) -> None:
-        """Combine two queries with a logical AND."""
-        self.q1 = q1
-        self.q2 = q2
-
-    def __repr__(self) -> str:
-        """Return a string representation of the query."""
-        return f"({self.q1!r} & {self.q2!r})"
-
-    def execute(self, df: pd.DataFrame) -> pd.Series:
-        """Return a boolean mask where both queries are satisfied."""
-        return self.q1.execute(df) & self.q2.execute(df)
-
-
-class OrQ(CombineQMixin):
-    """Query object for combining two queries with a logical OR.
-
-    >>> df = pd.DataFrame({'col1': [1, 2, 3]})
-    >>> q1 = Q('col1', '==', 1)
-    >>> q2 = Q('col1', '==', 3)
-    >>> or_q = q1 | q2
-    >>> print(or_q)
-    (Q('col1', '==', 1) | Q('col1', '==', 3))
-    >>> isinstance(or_q, OrQ)
-    True
-    >>> or_q.execute(df)
-    0     True
-    1    False
-    2     True
-    Name: col1, dtype: bool
-    >>> all((q1 | None).execute(df) == q1.execute(df))
-    True
-    """
-
-    def __init__(self, q1: QTypes, q2: QTypes) -> None:
-        """Combine two queries with a logical OR."""
-        self.q1 = q1
-        self.q2 = q2
-
-    def __repr__(self) -> str:
-        """Return a string representation of the query."""
-        return f"({self.q1!r} | {self.q2!r})"
-
-    def execute(self, df: pd.DataFrame) -> pd.Series:
-        """Return a boolean mask where either query is satisfied."""
-        return self.q1.execute(df) | self.q2.execute(df)
-
-
-class NotQ(CombineQMixin):
-    """Query object for negating a query.
-
-    >>> df = pd.DataFrame({'col1': [1, 2, 3]})
-    >>> q = Q('col1', '==', 2)
-    >>> not_q = ~q
-    >>> print(not_q)
-    ~Q('col1', '==', 2)
-    >>> isinstance(not_q, NotQ)
-    True
-    >>> not_q.execute(df)
-    0     True
-    1    False
-    2     True
-    Name: col1, dtype: bool
-    >>> print(~(Q('col1', '==', 2) & Q('col1', '!=', 3)))
-    ~(Q('col1', '==', 2) & Q('col1', '!=', 3))
-    """
-
-    def __init__(self, q: QTypes) -> None:
-        """Negate the given query ``q``."""
-        self.q = q
-
-    def __repr__(self) -> str:
-        """Return a string representation of the query."""
-        return f"~{self.q!r}"
-
-    def execute(self, df: pd.DataFrame) -> pd.Series:
-        """Return a boolean mask where the query is not satisfied."""
-        return ~self.q.execute(df)
-
-
-class NoneQ(CombineQMixin):
-    """Query object that always returns the entire DataFrame. Useful as default."""
-
-    def __repr__(self) -> str:
-        """Return a string representation of the query."""
-        return "NoneQ()"
-
-    def execute(self, df: pd.DataFrame) -> pd.Series:
-        """Return a boolean mask with all entries set to ``True``."""
-        return _get_all_true(df)
-
-
-QTypes = Q | AndQ | OrQ | NotQ | None
-"""Type for a query object or a combination of query objects."""
-
-
-class C:
-    """Wraps a column name and produces a :py:class:`Q` object upon comparison.
-
-    This is basically a shorthand for creating a :py:class:`Q` object that avoids
-    writing the operator and value in quotes. Thus, it may be more readable and allows
-    IDEs to provide better autocompletion.
-
-    .. caution::
-
-        Just like for the :py:class:`Q` object, it is not checked upon instantiation
-        whether the column name is valid. This is only done when the query is executed.
-    """
-
-    def __init__(self, *column: str) -> None:
-        """Create a column object for comparison.
-
-        For querying multi-level columns, both the syntax ``C('col1', 'col2')`` and
-        ``C(('col1', 'col2'))`` is valid.
-
-        >>> (C('col1', 'col2') == 1) == (C(('col1', 'col2')) == 1)
-        True
-        """
-        self.column = column[0] if len(column) == 1 else column
-
-    def __repr__(self) -> str:
-        """Return a string representation of the column object.
-
-        >>> repr(C('foo'))
-        "C('foo')"
-        >>> repr(C('foo', 'bar'))
-        "C(('foo', 'bar'))"
-        """
-        return f"C({self.column!r})"
-
-    def __eq__(self, value: Any) -> Q:
-        """Create a query object for comparing equality.
-
-        >>> C('foo') == 'bar'
-        Q('foo', '==', 'bar')
-        """
-        return Q(self.column, "==", value)
-
-    def __lt__(self, value: Any) -> Q:
-        """Create a query object for comparing less than.
-
-        >>> C('foo') < 42
-        Q('foo', '<', 42)
-        """
-        return Q(self.column, "<", value)
-
-    def __le__(self, value: Any) -> Q:
-        """Create a query object for comparing less than or equal.
-
-        >>> C('foo') <= 42
-        Q('foo', '<=', 42)
-        """
-        return Q(self.column, "<=", value)
-
-    def __gt__(self, value: Any) -> Q:
-        """Create a query object for comparing greater than.
-
-        >>> C('foo') > 42
-        Q('foo', '>', 42)
-        """
-        return Q(self.column, ">", value)
-
-    def __ge__(self, value: Any) -> Q:
-        """Create a query object for comparing greater than or equal.
-
-        >>> C('foo') >= 42
-        Q('foo', '>=', 42)
-        """
-        return Q(self.column, ">=", value)
-
-    def __ne__(self, value: Any) -> Q:
-        """Create a query object for comparing inequality.
-
-        >>> C('foo') != 'bar'
-        Q('foo', '!=', 'bar')
-        """
-        return Q(self.column, "!=", value)
-
-    def isin(self, value: list[Any]) -> Q:
-        """Create a query object for checking if the column values are in a list.
-
-        >>> C('foo').isin([1, 2, 3])
-        Q('foo', 'in', [1, 2, 3])
-        """
-        return Q(self.column, "in", value)
-
-    def contains(self, value: str) -> Q:
-        """Create a query object for checking if the column values contain a string.
-
-        >>> C('foo').contains('bar')
-        Q('foo', 'contains', 'bar')
-        """
-        return Q(self.column, "contains", value)
+AggFuncType = dict[str | tuple[str, str, str], Callable[[pd.Series], pd.Series]]
 
 
 @dataclass
@@ -462,31 +103,6 @@ class QueryPortion:
         return QueryPortion(match=self.fail, total=self.total)
 
 
-def align_diagnoses(
-    dataset: pd.DataFrame,
-    modalities: list[str],
-) -> list[pd.DataFrame]:
-    """Stack aligned diagnosis tables in ``dataset`` for each of ``modalities``."""
-    diagnosis_stack = []
-    for modality in modalities:
-        try:
-            this = dataset[modality].copy().drop(columns=["info"], errors="ignore")
-        except KeyError:
-            warnings.warn(f"Did not find modality {modality}, cannot align. Skipping.")  # noqa
-            continue
-
-        for i, other in enumerate(diagnosis_stack):
-            this, other = this.align(other, join="outer")
-            diagnosis_stack[i] = other
-
-        diagnosis_stack.append(this)
-
-    return diagnosis_stack
-
-
-AggFuncType = dict[str | tuple[str, str, str], Callable[[pd.Series], pd.Series]]
-
-
 @pd_ext.register_dataframe_accessor("ly")
 class LyDataAccessor:
     """Custom accessor for handling lymphatic involvement data.
@@ -500,6 +116,14 @@ class LyDataAccessor:
         self._obj = obj
         self._column_map_old = get_default_column_map_old()
         self._column_map_new = get_default_column_map_new()
+
+    def _get_safe_long_old(self, key: Any) -> tuple[str, str, str]:
+        """Get the old long column name or return the input."""
+        return getattr(self._column_map_old.from_short.get(key), "long", key)
+
+    def _get_safe_long_new(self, key: Any) -> tuple[str, str, str]:
+        """Get the new long column name or return the input."""
+        return getattr(self._column_map_new.from_short.get(key), "long", key)
 
     def __contains__(self, key: str) -> bool:
         """Check if a column is contained in the DataFrame.
@@ -519,24 +143,27 @@ class LyDataAccessor:
         >>> ("patient", "info", "age") in df.ly
         True
         """
-        _key_old = self._get_safe_long_old(key)
-        _key_new = self._get_safe_long_new(key)
-        return _key_new in self._obj or _key_old in self._obj
+        key_old = self._get_safe_long_old(key)
+        key_new = self._get_safe_long_new(key)
+        return key_new in self._obj or key_old in self._obj
 
     def __getitem__(self, key: str) -> pd.Series:
-        """Allow column access by short name, too."""
-        _key_old = self._get_safe_long_old(key)
-        _key_new = self._get_safe_long_new(key)
+        """Allow column access by short name, too.
 
-        try:
-            return self._obj[_key_new]
-        except KeyError as err_from_new:
-            try:
-                return self._obj[_key_old]
-            except KeyError:
-                raise KeyError(
-                    f"Neither '{_key_new}' nor '{_key_old}' found in DataFrame."
-                ) from err_from_new
+        >>> df = pd.DataFrame({("patient", "info", "nicotine_abuse"): [True, False]})
+        >>> df.ly["smoke"]
+        0     True
+        1    False
+        Name: (patient, info, nicotine_abuse), dtype: bool
+        """
+        key_old = self._get_safe_long_old(key)
+        key_new = self._get_safe_long_new(key)
+
+        for key in (key_new, key_old):
+            if key in self:
+                return self._obj[key]
+
+        raise KeyError(f"Neither '{key_new}' nor '{key_old}' found in DataFrame.")
 
     def __getattr__(self, name: str) -> Any:
         """Access columns also by short name.
@@ -563,26 +190,11 @@ class LyDataAccessor:
         except KeyError as key_err:
             raise AttributeError(f"Attribute {name!r} not found.") from key_err
 
-    def _get_safe_long_old(self, key: Any) -> tuple[str, str, str]:
-        """Get the old long column name or return the input."""
-        return getattr(self._column_map_old.from_short.get(key), "long", key)
-
-    def _get_safe_long_new(self, key: Any) -> tuple[str, str, str]:
-        """Get the new long column name or return the input."""
-        return getattr(self._column_map_new.from_short.get(key), "long", key)
-
     def validate(self, modalities: list[str] | None = None) -> pd.DataFrame:
-        """Validate the DataFrame against the lydata schema.
+        """Validate the DataFrame against the lydata schema."""
+        raise NotImplementedError("Validation is not yet implemented.")
 
-        The schema is constructed by the :py:func:`construct_schema` function using
-        the ``modalities`` provided or it will :py:func:`get_default_modalities` if
-        ``None`` are provided.
-        """
-        modalities = modalities or list(get_default_modalities().keys())
-        lydata_schema = construct_schema(modalities=modalities)
-        return lydata_schema.validate(self._obj)
-
-    def get_modalities(self, _filter: list[str] | None = None) -> list[str]:
+    def get_modalities(self, ignore_cols: list[str] | None = None) -> list[str]:
         """Return the modalities present in this DataFrame.
 
         .. warning::
@@ -595,22 +207,33 @@ class LyDataAccessor:
         top_level_cols = self._obj.columns.get_level_values(0)
         modalities = top_level_cols.unique().tolist()
 
-        for non_modality_col in _filter or [
-            "patient",
-            "tumor",
-            "total_dissected",
-            "positive_dissected",
-            "enbloc_dissected",
-            "enbloc_positive",
-        ]:
-            try:
-                modalities.remove(non_modality_col)
-            except ValueError:
-                pass
+        if ignore_cols is None:
+            ignore_cols = [
+                "patient",
+                "tumor",
+                "total_dissected",
+                "positive_dissected",
+                "enbloc_dissected",
+                "enbloc_positive",
+            ]
+
+        for col in ignore_cols:
+            if col in modalities:
+                modalities.remove(col)
 
         return modalities
 
-    def query(self, query: QTypes = None) -> pd.DataFrame:
+    def _get_mask(self, query: CanExecute | None = None) -> pd.Series:
+        """Safely get a boolean mask for the DataFrame based on the query."""
+        if query is None:
+            return _get_all_true(self._obj)
+
+        if isinstance(query, CanExecute):
+            return query.execute(self._obj)
+
+        raise TypeError(f"Cannot query with {type(query).__name__}.")
+
+    def query(self, query: CanExecute | None = None) -> pd.DataFrame:
         """Return a DataFrame with rows that satisfy the ``query``.
 
         A query is a :py:class:`Q` object that can be combined with logical operators.
@@ -620,6 +243,7 @@ class LyDataAccessor:
         :py:class:`C` object as in the example below, where we query all entries where
         ``x`` is greater than 1 and not less than 3:
 
+        >>> from lydata import C
         >>> df = pd.DataFrame({'x': [1, 2, 3]})
         >>> df.ly.query((C('x') > 1) & ~(C('x') < 3))
            x
@@ -629,24 +253,29 @@ class LyDataAccessor:
         0  1
         2  3
         """
-        mask = (query or NoneQ()).execute(self._obj)
+        mask = self._get_mask(query)
         return self._obj[mask]
 
-    def portion(self, query: QTypes = None, given: QTypes = None) -> QueryPortion:
+    def portion(
+        self,
+        query: CanExecute | None = None,
+        given: CanExecute | None = None,
+    ) -> QueryPortion:
         """Compute how many rows satisfy a ``query``, ``given`` some other conditions.
 
         This returns a :py:class:`QueryPortion` object that contains the number of rows
         satisfying the ``query`` and ``given`` :py:class:`Q` object divided by the
         number of rows satisfying only the ``given`` condition.
 
+        >>> from lydata import C
         >>> df = pd.DataFrame({'x': [1, 2, 3]})
         >>> df.ly.portion(query=C('x') ==  2, given=C('x') > 1)
         QueryPortion(match=np.int64(1), total=np.int64(2))
         >>> df.ly.portion(query=C('x') ==  2, given=C('x') > 3)
         QueryPortion(match=np.int64(0), total=np.int64(0))
         """
-        given_mask = (given or NoneQ()).execute(self._obj)
-        query_mask = (query or NoneQ()).execute(self._obj)
+        given_mask = self._get_mask(given)
+        query_mask = self._get_mask(query)
 
         return QueryPortion(
             match=query_mask[given_mask].sum(),
@@ -794,3 +423,12 @@ class LyDataAccessor:
             sensitivities=[1.0],  # a single modality's involvement info.
             subdivisions=subdivisions,
         )
+
+
+if TYPE_CHECKING:
+
+    class LyDataFrame:
+        """Type hint for lyDATA tables when using type checkers."""
+
+        ly: LyDataAccessor
+        """Type hint for the lydata accessor."""

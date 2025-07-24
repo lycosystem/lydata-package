@@ -242,3 +242,8 @@ def get_default_modalities() -> dict[str, ModalityConfig]:
         "pathology": ModalityConfig(spec=1.0, sens=1.0, kind="pathological"),
         "pCT": ModalityConfig(spec=0.86, sens=0.81),
     }
+
+
+def _get_all_true(df: pd.DataFrame) -> pd.Series:
+    """Return a mask with all entries set to ``True``."""
+    return pd.Series([True] * len(df))
