@@ -5,9 +5,11 @@ from lydata.augmentor import combine_and_augment_levels
 from lydata.utils import get_default_modalities
 
 
-def test_augment_levels() -> None:
+def test_clb_patient_17() -> None:
     """Check the advanced combination and augmentation of diagnoses and levels."""
-    clb_raw = next(lydata.load_datasets(institution="clb", subsite="oropharynx"))
+    clb_raw = next(
+        lydata.load_datasets(year=2021, institution="clb", subsite="oropharynx")
+    )
     modalities = get_default_modalities()
     modalities = {
         name: mod
@@ -23,3 +25,23 @@ def test_augment_levels() -> None:
     assert clb_aug.iloc[16].ipsi.I == False
     assert clb_aug.iloc[16].ipsi.Ia == False
     assert clb_aug.iloc[16].ipsi.Ib == False
+
+
+def test_usz_patient_9() -> None:
+    """Check the advanced combination and augmentation of diagnoses and levels."""
+    usz_raw = next(
+        lydata.load_datasets(year=2021, institution="usz", subsite="oropharynx")
+    )
+    modalities = get_default_modalities()
+    modalities = {
+        name: mod
+        for name, mod in modalities.items()
+        if name in usz_raw.columns.get_level_values(0)
+    }
+    usz_aug = combine_and_augment_levels(
+        diagnoses=[usz_raw[mod] for mod in modalities.keys()],
+        specificities=[mod.spec for mod in modalities.values()],
+        sensitivities=[mod.sens for mod in modalities.values()],
+    )
+    assert len(usz_aug) == len(usz_raw), "Augmented data length mismatch"
+    assert usz_aug.iloc[8].ipsi.III == False

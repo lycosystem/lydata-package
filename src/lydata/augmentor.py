@@ -31,33 +31,47 @@ def _keep_only_involvement(table: pd.DataFrame) -> pd.DataFrame:
 def _align_tables(tables: Sequence[pd.DataFrame]) -> list[pd.DataFrame]:
     """Align all columns in the sequence of ``tables``.
 
-    >>> one = pd.DataFrame({"a": [1, 2], "b": [3, 4]})
-    >>> two = pd.DataFrame({"c": [5, 6], "a": [7, 8]})
-    >>> aligned = _align_tables([one, two])
-    >>> aligned[0]
-       a  b   c
-    0  1  3 NaN
-    1  2  4 NaN
-    >>> aligned[1]
-       a   b  c
-    0  7 NaN  5
-    1  8 NaN  6
+    >>> one = pd.DataFrame({
+    ...     ("x", "a"): [1, 2],
+    ...     ("x", "b"): [3, 4],
+    ...     ("y", "c"): [5, 6],
+    ...     ("y", "b"): [19, 120],
+    ... })
+    >>> two = pd.DataFrame({
+    ...     ("y", "c"): [91, 10],
+    ...     ("y", "b"): [9, 10],
+    ...     ("x", "a"): [7, 8],
+    ... })
+    >>> three = pd.DataFrame({
+    ...     ("x", "c"): [71, 81],
+    ...     ("y", "b"): [5, 6],
+    ...     ("x", "a"): [5, 61],
+    ... })
+    >>> aligned = _align_tables([one, two, three])
+    >>> aligned[0]  # doctest: +NORMALIZE_WHITESPACE
+       x           y
+       a  b   c    b  c
+    0  1  3 NaN   19  5
+    1  2  4 NaN  120  6
+    >>> aligned[1]  # doctest: +NORMALIZE_WHITESPACE
+       x           y
+       a   b   c   b   c
+    0  7 NaN NaN   9  91
+    1  8 NaN NaN  10  10
+    >>> aligned[2]  # doctest: +NORMALIZE_WHITESPACE
+        x          y
+        a   b   c  b   c
+    0   5 NaN  71  5 NaN
+    1  61 NaN  81  6 NaN
     """
     if len(tables) == 0:
         return []
 
-    aligned_tables = []
-    this = None
+    all_columns = tables[0].columns
+    for table in tables[1:]:
+        all_columns = all_columns.union(table.columns)
 
-    for table in tables:
-        if this is None:
-            this = table.copy()
-            continue
-
-        this, other = this.align(table, join="outer")
-        aligned_tables.append(other)
-
-    return [this] + aligned_tables
+    return [table.reindex(columns=all_columns) for table in tables]
 
 
 def _convert_to_float_matrix(diagnoses: Sequence[pd.DataFrame]) -> np.ndarray:
