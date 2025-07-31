@@ -419,8 +419,8 @@ class LyDataAccessor:
 
         return combine_and_augment_levels(
             diagnoses=[self._obj[modality]],
-            specificities=[1.0],  # Numbers here don't matter, as we only "combine"
-            sensitivities=[1.0],  # a single modality's involvement info.
+            specificities=[0.9],  # Numbers here don't matter, as we only "combine"
+            sensitivities=[0.9],  # a single modality's involvement info.
             subdivisions=subdivisions,
         )
 
