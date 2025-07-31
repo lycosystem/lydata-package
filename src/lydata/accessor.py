@@ -24,7 +24,7 @@ from __future__ import annotations
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
 import pandas as pd
 import pandas.api.extensions as pd_ext
@@ -425,10 +425,8 @@ class LyDataAccessor:
         )
 
 
-if TYPE_CHECKING:
+class LyDataFrame(pd.DataFrame):
+    """Type hint for lyDATA tables when using type checkers."""
 
-    class LyDataFrame:
-        """Type hint for lyDATA tables when using type checkers."""
-
-        ly: LyDataAccessor
-        """Type hint for the lydata accessor."""
+    ly: LyDataAccessor
+    """Type hint for the lydata accessor."""
