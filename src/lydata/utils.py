@@ -167,15 +167,15 @@ def _new_from_old(long_name: tuple[str, str, str]) -> tuple[str, str, str]:
     """Convert an old long key name to a new long key name.
 
     >>> _new_from_old(("patient", "#", "neck_dissection"))
-    ('patient', 'info', 'neck_dissection')
+    ('patient', 'core', 'neck_dissection')
     >>> _new_from_old(("tumor", "1", "t_stage"))
-    ('tumor', 'info', 't_stage')
+    ('tumor', 'core', 't_stage')
     >>> _new_from_old(("a", "b", "c"))
     ('a', 'b', 'c')
     """
     start, middle, end = long_name
     if (start == "patient" and middle == "#") or (start == "tumor" and middle == "1"):
-        middle = "info"
+        middle = "core"
     return (start, middle, end)
 
 
@@ -201,12 +201,12 @@ def get_default_column_map_new() -> _ColumnMap:
     0      False
     ...
     286    False
-    Name: (patient, info, neck_dissection), Length: 287, dtype: bool
+    Name: (patient, core, neck_dissection), Length: 287, dtype: bool
     >>> df.ly.smoke   # doctest: +ELLIPSIS
     0       True
     ...
     286     True
-    Name: (patient, info, nicotine_abuse), Length: 287, dtype: bool
+    Name: (patient, core, nicotine_abuse), Length: 287, dtype: bool
     """
     return _ColumnMap.from_list(
         [

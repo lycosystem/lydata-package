@@ -57,31 +57,31 @@ class ParsingError(Exception):
 
 
 patient_columns = {
-    ("patient", "info", "institution"): Column(str),
-    ("patient", "info", "sex"): Column(str, Check.str_matches(r"^(male|female)$")),
-    ("patient", "info", "age"): Column(int),
-    ("patient", "info", "weight"): Column(
+    ("patient", "core", "institution"): Column(str),
+    ("patient", "core", "sex"): Column(str, Check.str_matches(r"^(male|female)$")),
+    ("patient", "core", "age"): Column(int),
+    ("patient", "core", "weight"): Column(
         float, Check.greater_than(0), **_NULLABLE_OPTIONAL
     ),
-    ("patient", "info", "diagnose_date"): Column(str, _DATE_CHECK),
-    ("patient", "info", "alcohol_abuse"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
-    ("patient", "info", "nicotine_abuse"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
-    ("patient", "info", "hpv_status"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
-    ("patient", "info", "neck_dissection"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
-    ("patient", "info", "tnm_edition"): Column(int, Check.in_range(7, 8)),
-    ("patient", "info", "n_stage"): Column(int, Check.in_range(0, 3)),
-    ("patient", "info", "m_stage"): Column(int, Check.in_range(-1, 1)),
+    ("patient", "core", "diagnose_date"): Column(str, _DATE_CHECK),
+    ("patient", "core", "alcohol_abuse"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
+    ("patient", "core", "nicotine_abuse"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
+    ("patient", "core", "hpv_status"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
+    ("patient", "core", "neck_dissection"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
+    ("patient", "core", "tnm_edition"): Column(int, Check.in_range(7, 8)),
+    ("patient", "core", "n_stage"): Column(int, Check.in_range(0, 3)),
+    ("patient", "core", "m_stage"): Column(int, Check.in_range(-1, 1)),
 }
 
 tumor_columns = {
-    ("tumor", "info", "subsite"): Column(str, Check.str_matches(r"^C\d{2}(\.\d)?$")),
-    ("tumor", "info", "t_stage"): Column(int, Check.in_range(0, 4)),
-    ("tumor", "info", "stage_prefix"): Column(str, Check.str_matches(r"^(p|c)$")),
-    ("tumor", "info", "volume"): Column(
+    ("tumor", "core", "subsite"): Column(str, Check.str_matches(r"^C\d{2}(\.\d)?$")),
+    ("tumor", "core", "t_stage"): Column(int, Check.in_range(0, 4)),
+    ("tumor", "core", "stage_prefix"): Column(str, Check.str_matches(r"^(p|c)$")),
+    ("tumor", "core", "volume"): Column(
         float, Check.greater_than(0), **_NULLABLE_OPTIONAL
     ),
-    ("tumor", "info", "central"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
-    ("tumor", "info", "extension"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
+    ("tumor", "core", "central"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
+    ("tumor", "core", "extension"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
 }
 
 
@@ -90,7 +90,7 @@ def get_modality_columns(
     lnls: list[str] = _LNLS,
 ) -> dict[tuple[str, str, str], Column]:
     """Get the validation columns for a given modality."""
-    cols = {(modality, "info", "date"): Column(str, _DATE_CHECK, **_NULLABLE_OPTIONAL)}
+    cols = {(modality, "core", "date"): Column(str, _DATE_CHECK, **_NULLABLE_OPTIONAL)}
 
     for side in ["ipsi", "contra"]:
         for lnl in lnls:
@@ -277,7 +277,7 @@ def transform_to_lyprox(
     .. code-block:: python
 
         column_map = {
-            ("patient", "info", "age"): {
+            ("patient", "core", "age"): {
                 "func": compute_age_from_raw,
                 "kwargs": {"randomize": False},
                 "columns": ["birthday", "date of diagnosis"]
@@ -288,7 +288,7 @@ def transform_to_lyprox(
     values of the columns ``"birthday"`` and ``"date of diagnosis"`` as positional
     arguments, and the keyword argument ``"randomize"`` is set to ``False``. The
     function then returns the patient's age, which is subsequently stored in the column
-    ``("patient", "info", "age")``.
+    ``("patient", "core", "age")``.
 
     Alternatively, this dictionary can also have a nested, tree-like structure, like
     this:
@@ -297,7 +297,7 @@ def transform_to_lyprox(
 
         column_map = {
             "patient": {
-                "info": {
+                "core": {
                     "age": {
                         "func": compute_age_from_raw,
                         "kwargs": {"randomize": False},

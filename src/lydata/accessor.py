@@ -135,12 +135,12 @@ class LyDataAccessor:
         False
         >>> ("patient", "#", "age") in df.ly
         True
-        >>> df = pd.DataFrame({("patient", "info", "age"): [61, 52, 73]})
+        >>> df = pd.DataFrame({("patient", "core", "age"): [61, 52, 73]})
         >>> "age" in df.ly
         True
         >>> "foo" in df.ly
         False
-        >>> ("patient", "info", "age") in df.ly
+        >>> ("patient", "core", "age") in df.ly
         True
         """
         key_old = self._get_safe_long_old(key)
@@ -150,11 +150,11 @@ class LyDataAccessor:
     def __getitem__(self, key: str) -> pd.Series:
         """Allow column access by short name, too.
 
-        >>> df = pd.DataFrame({("patient", "info", "nicotine_abuse"): [True, False]})
+        >>> df = pd.DataFrame({("patient", "core", "nicotine_abuse"): [True, False]})
         >>> df.ly["smoke"]
         0     True
         1    False
-        Name: (patient, info, nicotine_abuse), dtype: bool
+        Name: (patient, core, nicotine_abuse), dtype: bool
         """
         key_old = self._get_safe_long_old(key)
         key_new = self._get_safe_long_new(key)
@@ -174,12 +174,12 @@ class LyDataAccessor:
         1    52
         2    73
         Name: (patient, #, age), dtype: int64
-        >>> df = pd.DataFrame({("patient", "info", "age"): [61, 52, 73]})
+        >>> df = pd.DataFrame({("patient", "core", "age"): [61, 52, 73]})
         >>> df.ly.age
         0    61
         1    52
         2    73
-        Name: (patient, info, age), dtype: int64
+        Name: (patient, core, age), dtype: int64
         >>> df.ly.foo
         Traceback (most recent call last):
             ...
