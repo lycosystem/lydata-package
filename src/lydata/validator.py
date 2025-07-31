@@ -57,31 +57,31 @@ class ParsingError(Exception):
 
 
 patient_columns = {
-    ("patient", "#", "institution"): Column(str),
-    ("patient", "#", "sex"): Column(str, Check.str_matches(r"^(male|female)$")),
-    ("patient", "#", "age"): Column(int),
-    ("patient", "#", "weight"): Column(
+    ("patient", "info", "institution"): Column(str),
+    ("patient", "info", "sex"): Column(str, Check.str_matches(r"^(male|female)$")),
+    ("patient", "info", "age"): Column(int),
+    ("patient", "info", "weight"): Column(
         float, Check.greater_than(0), **_NULLABLE_OPTIONAL
     ),
-    ("patient", "#", "diagnose_date"): Column(str, _DATE_CHECK),
-    ("patient", "#", "alcohol_abuse"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
-    ("patient", "#", "nicotine_abuse"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
-    ("patient", "#", "hpv_status"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
-    ("patient", "#", "neck_dissection"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
-    ("patient", "#", "tnm_edition"): Column(int, Check.in_range(7, 8)),
-    ("patient", "#", "n_stage"): Column(int, Check.in_range(0, 3)),
-    ("patient", "#", "m_stage"): Column(int, Check.in_range(-1, 1)),
+    ("patient", "info", "diagnose_date"): Column(str, _DATE_CHECK),
+    ("patient", "info", "alcohol_abuse"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
+    ("patient", "info", "nicotine_abuse"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
+    ("patient", "info", "hpv_status"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
+    ("patient", "info", "neck_dissection"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
+    ("patient", "info", "tnm_edition"): Column(int, Check.in_range(7, 8)),
+    ("patient", "info", "n_stage"): Column(int, Check.in_range(0, 3)),
+    ("patient", "info", "m_stage"): Column(int, Check.in_range(-1, 1)),
 }
 
 tumor_columns = {
-    ("tumor", "1", "subsite"): Column(str, Check.str_matches(r"^C\d{2}(\.\d)?$")),
-    ("tumor", "1", "t_stage"): Column(int, Check.in_range(0, 4)),
-    ("tumor", "1", "stage_prefix"): Column(str, Check.str_matches(r"^(p|c)$")),
-    ("tumor", "1", "volume"): Column(
+    ("tumor", "info", "subsite"): Column(str, Check.str_matches(r"^C\d{2}(\.\d)?$")),
+    ("tumor", "info", "t_stage"): Column(int, Check.in_range(0, 4)),
+    ("tumor", "info", "stage_prefix"): Column(str, Check.str_matches(r"^(p|c)$")),
+    ("tumor", "info", "volume"): Column(
         float, Check.greater_than(0), **_NULLABLE_OPTIONAL
     ),
-    ("tumor", "1", "central"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
-    ("tumor", "1", "extension"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
+    ("tumor", "info", "central"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
+    ("tumor", "info", "extension"): _NULLABLE_OPTIONAL_BOOLEAN_COLUMN,
 }
 
 
@@ -277,7 +277,7 @@ def transform_to_lyprox(
     .. code-block:: python
 
         column_map = {
-            ("patient", "#", "age"): {
+            ("patient", "info", "age"): {
                 "func": compute_age_from_raw,
                 "kwargs": {"randomize": False},
                 "columns": ["birthday", "date of diagnosis"]
@@ -288,7 +288,7 @@ def transform_to_lyprox(
     values of the columns ``"birthday"`` and ``"date of diagnosis"`` as positional
     arguments, and the keyword argument ``"randomize"`` is set to ``False``. The
     function then returns the patient's age, which is subsequently stored in the column
-    ``("patient", "#", "age")``.
+    ``("patient", "info", "age")``.
 
     Alternatively, this dictionary can also have a nested, tree-like structure, like
     this:
@@ -297,7 +297,7 @@ def transform_to_lyprox(
 
         column_map = {
             "patient": {
-                "#": {
+                "info": {
                     "age": {
                         "func": compute_age_from_raw,
                         "kwargs": {"randomize": False},
