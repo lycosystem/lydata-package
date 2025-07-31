@@ -3,6 +3,7 @@
 from loguru import logger
 
 import lydata._version as _version
+from lydata.accessor import LyDataFrame
 from lydata.loader import (
     available_datasets,
     load_datasets,
@@ -16,6 +17,7 @@ __uri__ = "https://github.com/lycosystem/lydata"
 __version__ = _version.__version__
 
 __all__ = [
+    "LyDataFrame",
     "accessor",
     "Q",
     "C",
