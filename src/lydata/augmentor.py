@@ -1,13 +1,13 @@
 """Provides functions for augmenting and enhancing the lyDATA tables."""
 
-import re
 from collections.abc import Mapping, Sequence
 from itertools import product
 from typing import Literal
 
 import numpy as np
 import pandas as pd
-from roman import fromRoman as roman_to_int  # noqa: N813
+
+from lydata.utils import _sort_by
 
 
 def _keep_only_involvement(table: pd.DataFrame) -> pd.DataFrame:
@@ -88,27 +88,6 @@ def _convert_to_float_matrix(diagnoses: Sequence[pd.DataFrame]) -> np.ndarray:
     matrix = np.array(diagnoses)
     matrix[pd.isna(matrix)] = np.nan
     return np.astype(matrix, float)
-
-
-def _get_numeral_with_sub_value(key: str) -> float:
-    """Get the value of a Roman numeral with an optional sublevel.
-
-    >>> _get_numeral_with_sub_value("I")
-    1.0
-    >>> _get_numeral_with_sub_value("IIa")
-    2.01
-    >>> _get_numeral_with_sub_value("IXb")
-    9.02
-    """
-    numeral, sublvl = re.match(r"([IVXLCDM]+)([a-z]?)", key).groups()
-
-    base = roman_to_int(numeral)
-    addition = 0.0
-
-    if len(sublvl) == 1:
-        addition = "abcdefghijklmnopqrstuvwxyz".index(sublvl) / 100.0 + 0.01
-
-    return base + addition
 
 
 def _compute_likelihoods(
@@ -300,12 +279,5 @@ def combine_and_augment_levels(
             # Then below, we change the sublvl to involved.
             combined.loc[does_super_determine_unknown_sub_involved, sublvl_col] = True
 
-    # combined = combined[sorted(combined.columns.get_level_values(0))]
-
-    combined = combined.sort_index(
-        axis="columns",
-        level=1,
-        sort_remaining=False,
-        key=lambda idx: [_get_numeral_with_sub_value(str(x)) for x in idx],
-    )
-    return combined.sort_index(axis="columns", level=0, sort_remaining=False)
+    combined = _sort_by(combined, which="lnl", level=1)
+    return _sort_by(combined, which="mid", level=0)

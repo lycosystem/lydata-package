@@ -22,7 +22,7 @@ combining diagnoses from different modalities into a single column.
 from __future__ import annotations
 
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -34,9 +34,11 @@ from lydata.types import CanExecute
 from lydata.utils import (
     ModalityConfig,
     _get_all_true,
+    _sort_all,
     get_default_column_map_new,
     get_default_column_map_old,
     get_default_modalities,
+    update_and_expand,
 )
 
 warnings.simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
@@ -383,9 +385,10 @@ class LyDataAccessor:
         4    None
         """
         modalities = self._filter_modalities(modalities)
+        obj_copy = self._obj.copy()
 
         return combine_and_augment_levels(
-            diagnoses=[self._obj[mod] for mod in modalities.keys()],
+            diagnoses=[obj_copy[mod] for mod in modalities.keys()],
             specificities=[mod.spec for mod in modalities.values()],
             sensitivities=[mod.sens for mod in modalities.values()],
             method=method,
@@ -430,6 +433,40 @@ class LyDataAccessor:
             sensitivities=[0.9],  # a single modality's involvement info.
             subdivisions=subdivisions,
         )
+
+    def enhance(
+        self,
+        modalities: dict[str, ModalityConfig] | None = None,
+        method: Literal["max_llh", "rank"] = "max_llh",
+        subdivisions: Mapping[str, Sequence[str]] | None = None,
+    ) -> LyDataFrame:
+        """Shorthand for first combining ``modalities`` and then augmenting them.
+
+        This first runs the :py:meth:`~LyDataAccessor.combine` method and after that
+        the :py:meth:`~LyDataAccessor.augment` for every modality in ``modalities``
+        and the newly combined ``method``.
+        """
+        if modalities is None:
+            modalities = get_default_modalities()
+
+        combined = self.combine(modalities=modalities, method=method)
+        combined = pd.concat({method: combined}, axis="columns")
+        enhanced: LyDataFrame = self._obj.join(combined)
+        enhanced, _ = enhanced.align(combined, axis="columns")
+
+        for modality in list(modalities.keys()) + [method]:
+            if modality not in enhanced.columns:
+                continue
+
+            augmented = enhanced.ly.augment(
+                modality=modality,
+                subdivisions=subdivisions,
+            )
+            augmented = pd.concat({modality: augmented}, axis="columns")
+            enhanced = update_and_expand(left=enhanced, right=augmented)
+            enhanced, _ = enhanced.align(augmented, axis="columns")
+
+        return _sort_all(enhanced)
 
 
 class LyDataFrame(pd.DataFrame):
