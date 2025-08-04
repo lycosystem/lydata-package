@@ -1,14 +1,17 @@
 """Utility functions and classes."""
 
 import os
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import cmp_to_key
 from typing import Any, Literal
 
 import pandas as pd
 from github import Auth
 from loguru import logger
 from pydantic import BaseModel, Field
+from roman import fromRoman as roman_to_int  # noqa: N813
 
 
 def get_github_auth(
@@ -247,3 +250,104 @@ def get_default_modalities() -> dict[str, ModalityConfig]:
 def _get_all_true(df: pd.DataFrame) -> pd.Series:
     """Return a mask with all entries set to ``True``."""
     return pd.Series([True] * len(df))
+
+
+def _get_numeral_with_sub_value(key: str) -> float:
+    """Get the value of a Roman numeral with an optional sublevel.
+
+    >>> _get_numeral_with_sub_value("I")
+    1.0
+    >>> _get_numeral_with_sub_value("IIa")
+    2.01
+    >>> _get_numeral_with_sub_value("IXb")
+    9.02
+    """
+    match = re.match(r"([IVXLCDM]+)([a-z]?)", key)
+    if match is None:
+        raise ValueError(f"Invalid Roman numeral with sublevel: {key}")
+    numeral, sublvl = match.groups()
+
+    base = roman_to_int(numeral)
+    addition = 0.0
+
+    if len(sublvl) == 1:
+        addition = "abcdefghijklmnopqrstuvwxyz".index(sublvl) / 100.0 + 0.01
+
+    return base + addition
+
+
+def _top_lvl_cmp(left: str, right: str) -> int:
+    """Compare two top-level column names."""
+    if left == right:
+        return 0
+
+    if left == "patient":
+        return -1
+
+    if right == "patient":
+        return 1
+
+    if left == "tumor":
+        return -1
+
+    if right == "tumor":
+        return 1
+
+    return (left > right) - (left < right)
+
+
+def _mid_lvl_cmp(left: str, right: str) -> int:
+    """Compare two mid-level column names."""
+    if left == right:
+        return 0
+
+    if left == "core":
+        return -1
+
+    if right == "core":
+        return 1
+
+    return (left > right) - (left < right)
+
+
+def _lnl_cmp(left: str, right: str) -> int:
+    """Compare two roman numeral LNLs."""
+    try:
+        left_value = _get_numeral_with_sub_value(left)
+        right_value = _get_numeral_with_sub_value(right)
+        return (left_value > right_value) - (left_value < right_value)
+    except ValueError:
+        return (left > right) - (left < right)
+
+
+def _sort_by(
+    dataset: pd.DataFrame,
+    which: Literal["top", "mid", "lnl"],
+    level: int | None = None,
+) -> pd.DataFrame:
+    """Sort the DataFrame columns by the specified level."""
+    if level is None:
+        level = ["top", "mid", "lnl"].index(which)
+
+    cmps = {
+        "top": _top_lvl_cmp,
+        "mid": _mid_lvl_cmp,
+        "lnl": _lnl_cmp,
+    }
+
+    if which not in cmps:
+        raise ValueError(f"Invalid sorting level: {which} ('top', 'mid', or 'lnl').")
+
+    if level < 0 or level > 2:
+        raise ValueError(f"Invalid level: {level} (must be 0, 1, or 2).")
+
+    columns = dataset.columns.get_level_values(level).unique()
+    sorted_columns = sorted(columns, key=cmp_to_key(cmps[which]))
+    return dataset.reindex(columns=sorted_columns, level=level)
+
+
+def _sort_all(dataset: pd.DataFrame) -> pd.DataFrame:
+    """Sort the DataFrame columns by all levels."""
+    dataset = _sort_by(dataset, "lnl", level=2)
+    dataset = _sort_by(dataset, "mid", level=1)
+    return _sort_by(dataset, "top", level=0)
