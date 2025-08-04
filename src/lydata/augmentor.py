@@ -168,7 +168,29 @@ def combine_and_augment_levels(
     sides: Sequence[Literal["ipsi", "contra"]] | None = None,
     subdivisions: Mapping[str, Sequence[str]] | None = None,
 ) -> pd.DataFrame:
-    """Combine ``diagnoses`` and add sub-/superlevel involvement info."""
+    """Combine ``diagnoses`` and add sub-/superlevel involvement info.
+
+    Different diagnostic modalities may conflict with each other, e.g. on MRI an
+    LNL may look metastatic, while FNA finds no malignancy. This function combines
+    available diagnoses based on their ``sensitivities`` and ``specificities``
+    into a sort of consensus. When choosing the ``method="max_llh"``, the most likely/
+    probable diagnosis is chosen. If ``method="rank"``, the single most trustworthy
+    diagnosis is kept.
+
+    Additionally, the function may add and resolve sub- and superlevel involvement
+    information. For example, some datasets report the overall involvement in LNL II,
+    while others differentiate between sublevels IIa and IIb. Now, if IIa harbors
+    disease, that means that the overall involvement in II is also true. By specifying
+    ``subdivisions``, the function consistently updates these super- and sublevel
+    involvement patterns.
+
+    The returned :py:class:`~pandas.DataFrame` has a two-level multi-index: One level
+    for each of the ``sides`` and the second level for the involvement levels. This
+    means it i in the same format as the stack of input ``diagnoses``.
+
+    See the accessor methods ``:py:meth:`~lydata.accessor.LyDataAccessor.augment`` and
+    ``:py:meth:`~lydata.accessor.LyDataAccessor.combine`` for some examples.
+    """
     diagnoses = [_keep_only_involvement(table) for table in diagnoses]
     diagnoses = _align_tables(diagnoses)
     matrix = _convert_to_float_matrix(diagnoses)
@@ -267,12 +289,15 @@ def combine_and_augment_levels(
             sublvl_col = (side, sublvl)
             is_sub_unknown = combined[sublvl_col].isna()
             does_super_determine_unknown_sub_involved = (
-                is_super_involved  # This combination of conditions means that the
-                & is_sub_unknown  # current `sublvl` is unknown, while all others
-                & is_one_sub_unknown  # are healthy, while the superlvl is involved.
-                & ~is_any_sub_involved  # Then, we change the sublvl to involved.
+                is_super_involved
+                & is_sub_unknown
+                & is_one_sub_unknown
+                & ~is_any_sub_involved
                 & (involved_probs[superlvl_col] > super_healthy_prob_from_subs)
             )
+            # The above combination of conditions means that the current `sublvl` is
+            # unknown, while all others are healthy, while the superlvl is involved.
+            # Then below, we change the sublvl to involved.
             combined.loc[does_super_determine_unknown_sub_involved, sublvl_col] = True
 
     # combined = combined[sorted(combined.columns.get_level_values(0))]

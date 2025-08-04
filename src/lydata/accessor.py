@@ -399,6 +399,11 @@ class LyDataAccessor:
     ) -> pd.DataFrame:
         """Complete the sub- and superlevel involvement columns.
 
+        Internally, this calls the :py:func:`~augmentor.combine_and_augment_levels`
+        function, but only with one single modality. This is useful if the intention
+        is not to combine multiple modalities, but rather to fill in the missing
+        super- and sub-level involvement columns for a single modality.
+
         >>> df = pd.DataFrame({
         ...     ('MRI', 'ipsi'  , 'I' ): [True , False, False, None],
         ...     ('MRI', 'contra', 'I' ): [False, True , False, None],
@@ -417,8 +422,10 @@ class LyDataAccessor:
         if modality not in self.get_modalities():
             raise ValueError(f"Modality {modality!r} not found in DataFrame.")
 
+        obj_copy = self._obj.copy()
+
         return combine_and_augment_levels(
-            diagnoses=[self._obj[modality]],
+            diagnoses=[obj_copy[modality]],
             specificities=[0.9],  # Numbers here don't matter, as we only "combine"
             sensitivities=[0.9],  # a single modality's involvement info.
             subdivisions=subdivisions,
