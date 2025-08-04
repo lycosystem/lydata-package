@@ -293,6 +293,12 @@ def _top_lvl_cmp(left: str, right: str) -> int:
     if right == "tumor":
         return 1
 
+    if left == "max_llh":
+        return -1
+
+    if right == "max_llh":
+        return 1
+
     return (left > right) - (left < right)
 
 
@@ -317,6 +323,11 @@ def _lnl_cmp(left: str, right: str) -> int:
         right_value = _get_numeral_with_sub_value(right)
         return (left_value > right_value) - (left_value < right_value)
     except ValueError:
+        if "id" in left:
+            return -1
+        if "id" in right:
+            return 1
+
         return (left > right) - (left < right)
 
 
