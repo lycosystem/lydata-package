@@ -8,7 +8,7 @@ from lydata.augmentor import combine_and_augment_levels
 from lydata.utils import get_default_modalities
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def clb_raw() -> pd.DataFrame:
     """Load the CLB dataset."""
     return next(
@@ -42,12 +42,29 @@ def test_clb_patient_17(clb_raw: pd.DataFrame) -> None:
 
 
 def test_clb_patient_p011(clb_raw: pd.DataFrame) -> None:
-    """Check that this patient's `NaN` values are handled correctly."""
+    """Check that this patient's `NaN` values are handled correctly.
+
+    In this patient, the sublvls are missing, therefore the superlvls should not be
+    overridden by the augmentor.
+    """
     idx = clb_raw.ly.id == "P011"
     patient = clb_raw.loc[idx]
     enhanced = patient.ly.enhance()
-
     assert enhanced.iloc[0].pathology.ipsi.II == patient.iloc[0].pathology.ipsi.II
+
+
+def test_clb_patient_p035(clb_raw: pd.DataFrame) -> None:
+    """Check that this patient's `NaN` values are handled correctly.
+
+    In this patient, pathology reports ipsi.Ib as healthy, while diagnostic consensus
+    reports ipsi.Ib as involved. This should correctly be combined to ipsi.Ib = False
+    and the superlvl should also be set to False.
+    """
+    idx = clb_raw.ly.id == "P035"
+    patient = clb_raw.loc[idx]
+    enhanced = patient.ly.enhance()
+    assert enhanced.iloc[0].max_llh.ipsi.I == False
+    assert enhanced.iloc[0].max_llh.ipsi.Ib == False
 
 
 def test_usz_patient_9() -> None:

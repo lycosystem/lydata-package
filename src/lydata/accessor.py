@@ -451,7 +451,7 @@ class LyDataAccessor:
 
         combined = self.combine(modalities=modalities, method=method)
         combined = pd.concat({method: combined}, axis="columns")
-        enhanced: LyDataFrame = self._obj.join(combined)
+        enhanced: LyDataFrame = self._obj.join(combined, how="outer")
         enhanced, _ = enhanced.align(combined, axis="columns")
 
         for modality in list(modalities.keys()) + [method]:
