@@ -226,12 +226,13 @@ def combine_and_augment_levels(
         is_any_sub_involved = combined[sublvl_cols].any(axis=1)
         is_one_sub_unknown = combined[sublvl_cols].isna().sum(axis=1) == 1
         are_all_subs_healthy = (combined[sublvl_cols] == False).all(axis=1)
+        are_all_subs_unknown = combined[sublvl_cols].isna().all(axis=1)
 
         # Superlvl unknown => no conflict, use sublvl info
         combined.loc[is_super_unknown & is_any_sub_involved, superlvl_col] = True
         combined.loc[is_super_unknown & are_all_subs_healthy, superlvl_col] = False
 
-        # Sublevels unknown => no conflict, use superlvl info
+        # No sublvl involved => no conflict, use superlvl info
         combined.loc[~is_any_sub_involved & is_super_healthy, sublvl_cols] = False
 
         # Conflicts
@@ -239,13 +240,17 @@ def combine_and_augment_levels(
         super_healthy_prob_from_subs = np.nanprod(healthy_probs[sublvl_cols], axis=1)
         super_involved_prob_from_subs = 1.0 - super_healthy_prob_from_subs
 
-        do_subs_determine_super_healthy = is_super_involved & (
-            super_healthy_prob_from_subs > involved_probs[superlvl_col]
+        do_subs_determine_super_healthy = (
+            is_super_involved
+            & ~are_all_subs_unknown
+            & (super_healthy_prob_from_subs > involved_probs[superlvl_col])
         )
         combined.loc[do_subs_determine_super_healthy, superlvl_col] = False
 
-        do_subs_determine_super_involved = is_super_healthy & (
-            super_involved_prob_from_subs > healthy_probs[superlvl_col]
+        do_subs_determine_super_involved = (
+            is_super_healthy
+            & ~are_all_subs_unknown
+            & (super_involved_prob_from_subs > healthy_probs[superlvl_col])
         )
         combined.loc[do_subs_determine_super_involved, superlvl_col] = True
 
