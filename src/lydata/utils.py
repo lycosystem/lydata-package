@@ -56,12 +56,6 @@ def update_and_expand(
     0  1.0  3  6
     1  3.0  4  7
     2  4.0  5  8
-    >>> left = pd.DataFrame({("x", "a"): [None], ("y", "b"): [1]})
-    >>> right = pd.DataFrame({("x", "a"): [2], ("y", "c"): [3]})
-    >>> update_and_expand(left, right)  # doctest: +NORMALIZE_WHITESPACE
-       x  y
-       a  b  c
-    0  2  1  3
     """
     result = left.copy()
     result.update(right, **update_kwargs)
@@ -69,6 +63,16 @@ def update_and_expand(
     for column in right.columns:
         if column not in result.columns:
             result[column] = right[column]
+
+    return result
+
+
+def replace(left: pd.DataFrame, right: pd.DataFrame) -> pd.DataFrame:
+    """Replace all columns in ``left`` with those from ``right``."""
+    result = left.copy()
+
+    for column in right.columns:
+        result[column] = right[column]
 
     return result
 

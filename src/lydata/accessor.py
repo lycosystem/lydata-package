@@ -38,6 +38,7 @@ from lydata.utils import (
     get_default_column_map_new,
     get_default_column_map_old,
     get_default_modalities,
+    replace,
 )
 
 warnings.simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
@@ -464,8 +465,7 @@ class LyDataAccessor:
             )
             augmented = pd.concat({modality: augmented}, axis="columns")
             augmented.index = enhanced.index
-            enhanced = enhanced.drop(columns=[modality])
-            enhanced = pd.concat([enhanced, augmented], axis="columns")
+            enhanced = replace(left=enhanced, right=augmented)
             enhanced, _ = enhanced.align(augmented, axis="columns")
 
         return _sort_all(enhanced)
