@@ -38,7 +38,6 @@ from lydata.utils import (
     get_default_column_map_new,
     get_default_column_map_old,
     get_default_modalities,
-    update_and_expand,
 )
 
 warnings.simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
@@ -451,7 +450,8 @@ class LyDataAccessor:
 
         combined = self.combine(modalities=modalities, method=method)
         combined = pd.concat({method: combined}, axis="columns")
-        enhanced: LyDataFrame = self._obj.join(combined, how="outer")
+        combined.index = self._obj.index
+        enhanced: LyDataFrame = pd.concat([self._obj, combined], axis="columns")
         enhanced, _ = enhanced.align(combined, axis="columns")
 
         for modality in list(modalities.keys()) + [method]:
@@ -463,7 +463,9 @@ class LyDataAccessor:
                 subdivisions=subdivisions,
             )
             augmented = pd.concat({modality: augmented}, axis="columns")
-            enhanced = update_and_expand(left=enhanced, right=augmented)
+            augmented.index = enhanced.index
+            enhanced = enhanced.drop(columns=[modality])
+            enhanced = pd.concat([enhanced, augmented], axis="columns")
             enhanced, _ = enhanced.align(augmented, axis="columns")
 
         return _sort_all(enhanced)
