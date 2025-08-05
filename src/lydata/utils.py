@@ -56,6 +56,12 @@ def update_and_expand(
     0  1.0  3  6
     1  3.0  4  7
     2  4.0  5  8
+    >>> left = pd.DataFrame({("x", "a"): [None], ("y", "b"): [1]})
+    >>> right = pd.DataFrame({("x", "a"): [2], ("y", "c"): [3]})
+    >>> update_and_expand(left, right)  # doctest: +NORMALIZE_WHITESPACE
+       x  y
+       a  b  c
+    0  2  1  3
     """
     result = left.copy()
     result.update(right, **update_kwargs)
@@ -198,7 +204,7 @@ def get_default_column_map_new() -> _ColumnMap:
     >>> df = next(loader.load_datasets(
     ...     institution="usz",
     ...     repo_name="lycosystem/lydata.private",
-    ...     ref="ce2ac255b8aec7443375b610e5254a46bf236a46",
+    ...     ref="fb55afa26ff78afa78274a86b131fb3014d0ceea",
     ... ))
     >>> df.ly.surgery   # doctest: +ELLIPSIS
     0      False
