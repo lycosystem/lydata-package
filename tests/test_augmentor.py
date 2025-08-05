@@ -1,25 +1,10 @@
 """Check that inferring sub- and super-levels works correctly."""
 
 import pandas as pd
-import pytest
 
 import lydata  # noqa: F401
 from lydata.augmentor import combine_and_augment_levels
 from lydata.utils import get_default_modalities
-
-
-@pytest.fixture(scope="module")
-def clb_raw() -> pd.DataFrame:
-    """Load the CLB dataset."""
-    return next(
-        lydata.load_datasets(
-            year=2021,
-            institution="clb",
-            subsite="oropharynx",
-            use_github=True,
-            ref="4668ff6006764169411d6d198c126b020a7892b2",
-        ),
-    )
 
 
 def test_clb_patient_17(clb_raw: pd.DataFrame) -> None:
@@ -63,6 +48,7 @@ def test_clb_patient_p035(clb_raw: pd.DataFrame) -> None:
     idx = clb_raw.ly.id == "P035"
     patient = clb_raw.loc[idx]
     enhanced = patient.ly.enhance()
+    assert len(patient) == len(enhanced) == 1, "Patient data length mismatch"
     assert enhanced.iloc[0].max_llh.ipsi.I == False
     assert enhanced.iloc[0].max_llh.ipsi.Ib == False
 
@@ -70,7 +56,13 @@ def test_clb_patient_p035(clb_raw: pd.DataFrame) -> None:
 def test_usz_patient_9() -> None:
     """Check the advanced combination and augmentation of diagnoses and levels."""
     usz_raw = next(
-        lydata.load_datasets(year=2021, institution="usz", subsite="oropharynx")
+        lydata.load_datasets(
+            year=2021,
+            institution="usz",
+            subsite="oropharynx",
+            use_github=True,
+            ref="4668ff6006764169411d6d198c126b020a7892b2",
+        ),
     )
     modalities = get_default_modalities()
     modalities = {
@@ -85,3 +77,23 @@ def test_usz_patient_9() -> None:
     )
     assert len(usz_aug) == len(usz_raw), "Augmented data length mismatch"
     assert usz_aug.iloc[8].ipsi.III == False
+
+
+def test_usz_patient_usz0079() -> None:
+    """Check that this patient..."""
+    usz_raw = next(
+        lydata.load_datasets(
+            year=2025,
+            institution="usz",
+            subsite="hypopharynx-larynx",
+            use_github=True,
+            repo_name="lycosystem/lydata.private",
+            ref="ab04379a36b6946306041d1d38ad7e97df8ee7ba",
+        ),
+    )
+    idx = usz_raw.ly.id == "USZ0079"
+    patient = usz_raw.loc[idx]
+    enhanced = patient.ly.enhance()
+    assert enhanced.iloc[0].max_llh.ipsi.II == True
+    assert pd.isna(enhanced.iloc[0].max_llh.ipsi.IIa)
+    assert pd.isna(enhanced.iloc[0].max_llh.ipsi.IIb)
