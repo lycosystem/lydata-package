@@ -6,11 +6,12 @@ Also, it may be used to create a HTML form to enter patient data.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 import pandas as pd
 from pydantic import (
     BaseModel,
+    BeforeValidator,
     Field,
     PastDate,
     create_model,
@@ -68,7 +69,7 @@ class PatientInfo(BaseModel):
         default=8,
         description="Edition of the TNM classification used for staging.",
     )
-    n_stage: int = Field(
+    n_stage: int | None = Field(
         ge=0,
         le=3,
         description="N stage of the patient according to the TNM classification.",
@@ -100,7 +101,7 @@ class PatientRecord(BaseModel):
     As of now, this only contains the patient information.
     """
 
-    info: PatientInfo = Field(default_factory=PatientInfo, alias="_")
+    info: PatientInfo = Field(default_factory=PatientInfo, alias="core")
 
 
 class TumorInfo(BaseModel):
@@ -128,7 +129,7 @@ class TumorInfo(BaseModel):
         default="c",
         description="Prefix for the tumor stage, 'c' = clinical, 'p' = pathological.",
     )
-    t_stage: int = Field(
+    t_stage: int | None = Field(
         ge=0,
         le=4,
         description="T stage of the tumor according to the TNM classification.",
@@ -147,14 +148,14 @@ class TumorRecord(BaseModel):
     As of now, this only contains the tumor information.
     """
 
-    info: TumorInfo = Field(default_factory=TumorInfo, alias="_")
+    info: TumorInfo = Field(default_factory=TumorInfo, alias="core")
 
 
-def create_lnl_field(lnl: str) -> tuple[str, tuple[bool | None, Field]]:
+def create_lnl_field(lnl: str) -> tuple[type, Field]:
     """Create a field for a specific lymph node level."""
     return (
-        f"ln_{lnl.lower()}",
-        (bool | None, Field(default=None, description=f"LN {lnl} involvement")),
+        Annotated[bool | None, BeforeValidator(lambda v: None if pd.isna(v) else v)],
+        Field(default=None, description=f"LN {lnl} involvement"),
     )
 
 
@@ -174,6 +175,7 @@ UnilateralInvolvementInfo = create_model(
     "UnilateralInvolvementInfo",
     **{lnl: create_lnl_field(lnl) for lnl in _LNLS},
 )
+
 
 class ModalityRecord(BaseModel):
     """A record of the involvement patterns of a diagnostic or pathological modality."""

@@ -19,13 +19,12 @@ platform database.
 import sys
 from typing import Any
 
-import pandas as pd
 from loguru import logger
-from pydantic import Field, create_model
+from pydantic import BaseModel, Field, create_model
 
 from lydata import loader
+from lydata.accessor import LyDataAccessor, LyDataFrame  # noqa: F401
 from lydata.schema import BaseRecord, ModalityRecord
-from lydata.utils import get_default_modalities
 
 
 def flatten(
@@ -99,38 +98,74 @@ def create_modality_field(modality: str) -> tuple[type, Field]:
     )
 
 
-def validate(dataset: pd.DataFrame) -> bool:
-    """Validate the given dataset against the lyDATA schema."""
-    top_lvl_cols = set(dataset.columns.get_level_values(0).unique())
-    top_lvl_cols -= {"patient", "tumor"}
-
-    modality_cols = set()
-    for col in top_lvl_cols:
-        if col in get_default_modalities():
-            modality_cols.add(col)
-
-    FullRecord = create_model(  # noqa: N806
+def create_full_record_model(modalities: list[str]) -> type:
+    """Create a Pydantic model for a full record with all modalities."""
+    return create_model(
         "FullRecord",
         __base__=BaseRecord,
-        **{col: create_modality_field(col) for col in modality_cols},
+        **{mod: create_modality_field(mod) for mod in modalities},
     )
+
+
+def validate(dataset: LyDataFrame) -> bool:
+    """Validate the given dataset against the lyDATA schema."""
+    modalities = dataset.ly.get_modalities()
+    FullRecord = create_full_record_model(modalities)  # noqa: N806
 
     for i, row in dataset.iterrows():
         record = unflatten(row.to_dict())
+        patient_id = record["patient"]["core"]["id"]
 
-        move_value(record["patient"], from_key="#", to_key="_")
-        move_value(record["tumor"], from_key="1", to_key="_")
+        # move_value(record["patient"], from_key="#", to_key="core")
+        # move_value(record["tumor"], from_key="1", to_key="core")
 
-        with logger.catch(message=f"Validation error for patient {i}"):
+        with logger.catch(message=f"Validation error for {patient_id=}"):
             validated_record = FullRecord(**record)
             logger.debug(f"Patient {i} is valid: {validated_record}")
 
     return True
 
 
+def get_field_annotations(
+    model: type[BaseModel],
+) -> dict[str, Any]:
+    """Get the field annotations of a three-level nested Pydantic model.
+
+    >>> class Foo(BaseModel):
+    ...     bar: int = 3
+    >>> class Baz(BaseModel):
+    ...     foo: Foo = Field(default_factory=Foo)
+    >>> get_field_annotations(Baz)
+    {'foo': {'bar': <class 'int'>}}
+    """
+    annotations = {}
+    for field_name, field_info in model.model_fields.items():
+        if issubclass(field_info.annotation, BaseModel):
+            annotations[field_name] = get_field_annotations(field_info.annotation)
+        elif isinstance(field_info.annotation, type):
+            annotations[field_name] = field_info.annotation
+
+    return annotations
+
+
+def cast_types(dataset: LyDataFrame) -> LyDataFrame:
+    """Cast the types of the dataset to the expected types."""
+    modalities = dataset.ly.get_modalities()
+    FullRecord = create_full_record_model(modalities)  # noqa: N806
+    annotations = get_field_annotations(FullRecord)
+    annotations = flatten(annotations, max_depth=3)
+    ...
+    # TODO: Implement type casting logic based on annotations
+
+
 if __name__ == "__main__":
     logger.enable("lydata")
     logger.remove()
     logger.add(sys.stderr, level="INFO")
-    dataset = next(loader.load_datasets())
+    dataset = next(
+        loader.load_datasets(
+            repo_name="lycosystem/lydata.private",
+            ref="4b519c6a23e9eda00fad7a1e9dedae42b161754d",
+        )
+    )
     validate(dataset)
