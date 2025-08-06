@@ -1,14 +1,17 @@
 """Utility functions and classes."""
 
 import os
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import cmp_to_key
 from typing import Any, Literal
 
 import pandas as pd
 from github import Auth
 from loguru import logger
 from pydantic import BaseModel, Field
+from roman import fromRoman as roman_to_int  # noqa: N813
 
 
 def get_github_auth(
@@ -16,7 +19,7 @@ def get_github_auth(
     user: str | None = None,
     password: str | None = None,
 ) -> Auth.Auth | None:
-    """Get the GitHub authentication object."""
+    """Get the GitHub authentication object from arguments or environment variables."""
     token = token or os.getenv("GITHUB_TOKEN")
     user = user or os.getenv("GITHUB_USER")
     password = password or os.getenv("GITHUB_PASSWORD")
@@ -64,9 +67,27 @@ def update_and_expand(
     return result
 
 
+def replace(left: pd.DataFrame, right: pd.DataFrame) -> pd.DataFrame:
+    """Replace all columns in ``left`` with those from ``right``."""
+    result = left.copy()
+
+    for column in right.columns:
+        result[column] = right[column]
+
+    return result
+
+
 @dataclass
 class _ColumnSpec:
-    """Class for specifying column names and aggfuncs."""
+    """Class for specifying column names and aggfuncs.
+
+    This serves a dual purpose:
+
+    1. It is a simple container that ties together a short name and a long name. For
+       this we could have used a `namedtuple` as well.
+    2. Every `_ColumnSpec` is also an aggregation function in itself. This is used in
+       the :py:meth:`~lydata.accessor.LyDataAccessor.stats` method.
+    """
 
     short: str
     long: tuple[str, str, str]
@@ -108,14 +129,18 @@ class _ColumnMap:
         return iter(self.from_short.values())
 
 
-def get_default_column_map() -> _ColumnMap:
-    """Get the default column map.
+def get_default_column_map_old() -> _ColumnMap:
+    """Get the old default column map.
 
     This map defines which short column names can be used to access columns in the
     DataFrames.
 
     >>> from lydata import accessor, loader
-    >>> df = next(loader.load_datasets(institution="usz"))
+    >>> df = next(loader.load_datasets(
+    ...     institution="usz",
+    ...     repo_name="lycosystem/lydata.private",
+    ...     ref="ab04379a36b6946306041d1d38ad7e97df8ee7ba",
+    ... ))
     >>> df.ly.surgery   # doctest: +ELLIPSIS
     0      False
     ...
@@ -146,6 +171,60 @@ def get_default_column_map() -> _ColumnMap:
             _ColumnSpec("subsite", ("tumor", "1", "subsite")),
             _ColumnSpec("volume", ("tumor", "1", "volume")),
             _ColumnSpec("central", ("tumor", "1", "central")),
+            _ColumnSpec("side", ("tumor", "1", "side")),
+        ]
+    )
+
+
+def _new_from_old(long_name: tuple[str, str, str]) -> tuple[str, str, str]:
+    """Convert an old long key name to a new long key name.
+
+    >>> _new_from_old(("patient", "#", "neck_dissection"))
+    ('patient', 'core', 'neck_dissection')
+    >>> _new_from_old(("tumor", "1", "t_stage"))
+    ('tumor', 'core', 't_stage')
+    >>> _new_from_old(("a", "b", "c"))
+    ('a', 'b', 'c')
+    """
+    start, middle, end = long_name
+    if (start == "patient" and middle == "#") or (start == "tumor" and middle == "1"):
+        middle = "core"
+    return (start, middle, end)
+
+
+def is_old(dataset: pd.DataFrame) -> bool:
+    """Check if the dataset uses the old column names."""
+    second_lvl_headers = dataset.columns.get_level_values(1)
+    return "#" in second_lvl_headers or "1" in second_lvl_headers
+
+
+def get_default_column_map_new() -> _ColumnMap:
+    """Get the old default column map.
+
+    This map defines which short column names can be used to access columns in the
+    DataFrames.
+
+    >>> from lydata import accessor, loader
+    >>> df = next(loader.load_datasets(
+    ...     institution="usz",
+    ...     repo_name="lycosystem/lydata.private",
+    ...     ref="fb55afa26ff78afa78274a86b131fb3014d0ceea",
+    ... ))
+    >>> df.ly.surgery   # doctest: +ELLIPSIS
+    0      False
+    ...
+    286    False
+    Name: (patient, core, neck_dissection), Length: 287, dtype: bool
+    >>> df.ly.smoke   # doctest: +ELLIPSIS
+    0       True
+    ...
+    286     True
+    Name: (patient, core, nicotine_abuse), Length: 287, dtype: bool
+    """
+    return _ColumnMap.from_list(
+        [
+            _ColumnSpec(cs.short, _new_from_old(cs.long))
+            for cs in get_default_column_map_old()
         ]
     )
 
@@ -178,69 +257,118 @@ def get_default_modalities() -> dict[str, ModalityConfig]:
     }
 
 
-def infer_all_levels(
-    dataset: pd.DataFrame,
-    infer_superlevels_kwargs: dict[str, Any] | None = None,
-    infer_sublevels_kwargs: dict[str, Any] | None = None,
-) -> pd.DataFrame:
-    """Infer all levels of involvement for each diagnostic modality.
+def _get_all_true(df: pd.DataFrame) -> pd.Series:
+    """Return a mask with all entries set to ``True``."""
+    return pd.Series([True] * len(df))
 
-    This function first infers sublevel (e.g. 'IIa', and 'IIb') involvement for each
-    modality using :py:meth:`~lydata.accessor.LyDataAccessor.infer_sublevels`. Then,
-    it infers superlevel (e.g. 'II') involvement for each modality using
-    :py:meth:`~lydata.accessor.LyDataAccessor.infer_superlevels`.
+
+def _get_numeral_with_sub_value(key: str) -> float:
+    """Get the value of a Roman numeral with an optional sublevel.
+
+    >>> _get_numeral_with_sub_value("I")
+    1.0
+    >>> _get_numeral_with_sub_value("IIa")
+    2.01
+    >>> _get_numeral_with_sub_value("IXb")
+    9.02
     """
-    infer_sublevels_kwargs = infer_sublevels_kwargs or {}
-    infer_superlevels_kwargs = infer_superlevels_kwargs or {}
+    match = re.match(r"([IVXLCDM]+)([a-z]?)", key)
+    if match is None:
+        raise ValueError(f"Invalid Roman numeral with sublevel: {key}")
+    numeral, sublvl = match.groups()
 
-    result = dataset.copy()
+    base = roman_to_int(numeral)
+    addition = 0.0
 
-    result = update_and_expand(
-        left=result,
-        right=result.ly.infer_superlevels(**infer_superlevels_kwargs),
-    )
-    return update_and_expand(
-        left=result,
-        right=result.ly.infer_sublevels(**infer_sublevels_kwargs),
-    )
+    if len(sublvl) == 1:
+        addition = "abcdefghijklmnopqrstuvwxyz".index(sublvl) / 100.0 + 0.01
+
+    return base + addition
 
 
-def infer_and_combine_levels(
+def _top_lvl_cmp(left: str, right: str) -> int:
+    """Compare two top-level column names."""
+    if left == right:
+        return 0
+
+    if left == "patient":
+        return -1
+
+    if right == "patient":
+        return 1
+
+    if left == "tumor":
+        return -1
+
+    if right == "tumor":
+        return 1
+
+    if left == "max_llh":
+        return -1
+
+    if right == "max_llh":
+        return 1
+
+    return (left > right) - (left < right)
+
+
+def _mid_lvl_cmp(left: str, right: str) -> int:
+    """Compare two mid-level column names."""
+    if left == right:
+        return 0
+
+    if left == "core":
+        return -1
+
+    if right == "core":
+        return 1
+
+    return (left > right) - (left < right)
+
+
+def _lnl_cmp(left: str, right: str) -> int:
+    """Compare two roman numeral LNLs."""
+    try:
+        left_value = _get_numeral_with_sub_value(left)
+        right_value = _get_numeral_with_sub_value(right)
+        return (left_value > right_value) - (left_value < right_value)
+    except ValueError:
+        if "id" in left:
+            return -1
+        if "id" in right:
+            return 1
+
+        return (left > right) - (left < right)
+
+
+def _sort_by(
     dataset: pd.DataFrame,
-    infer_superlevels_kwargs: dict[str, Any] | None = None,
-    infer_sublevels_kwargs: dict[str, Any] | None = None,
-    combine_kwargs: dict[str, Any] | None = None,
+    which: Literal["top", "mid", "lnl"],
+    level: int | None = None,
 ) -> pd.DataFrame:
-    """Enhance the dataset by inferring additional columns from the data.
+    """Sort the DataFrame columns by the specified level."""
+    if level is None:
+        level = ["top", "mid", "lnl"].index(which)
 
-    This performs the following steps in order:
+    cmps = {
+        "top": _top_lvl_cmp,
+        "mid": _mid_lvl_cmp,
+        "lnl": _lnl_cmp,
+    }
 
-    1. Infer the superlevel involvement for each diagnostic modality using the
-        :py:meth:`~lydata.accessor.LyDataAccessor.infer_superlevels` method.
-    2. Infer the sublevel involvement for each diagnostic modality using the
-        :py:meth:`~lydata.accessor.LyDataAccessor.infer_sublevels` method. This skips
-        all LNLs that were computed in the previous step.
-    3. Compute the maximum likelihood estimate of the true state of the patient using
-        the :py:meth:`~lydata.accessor.LyDataAccessor.combine`.
+    if which not in cmps:
+        raise ValueError(f"Invalid sorting level: {which} ('top', 'mid', or 'lnl').")
 
-    .. important::
+    if level < 0 or level > 2:
+        raise ValueError(f"Invalid level: {level} (must be 0, 1, or 2).")
 
-        Performing these operations in any other order may lead to the loss of some
-        information or even to conflicting LNL involvement information.
+    columns = dataset.columns.get_level_values(level).unique()
+    sorted_columns = sorted(columns, key=cmp_to_key(cmps[which]))
+    return dataset.reindex(columns=sorted_columns, level=level)
 
-    The result contains all LNLs of interest in the head and neck region, as well as
-    the best estimate of the true state of the patient under the top-level key
-    ``max_llh``.
-    """
-    result = infer_all_levels(
-        dataset,
-        infer_superlevels_kwargs=infer_superlevels_kwargs,
-        infer_sublevels_kwargs=infer_sublevels_kwargs,
-    )
-    combine_kwargs = combine_kwargs or {}
-    method = combine_kwargs.get("method", "max_llh")
-    max_llh = pd.concat(
-        {method: result.ly.combine(**combine_kwargs)},
-        axis="columns",
-    )
-    return result.join(max_llh)
+
+def _sort_all(dataset: pd.DataFrame) -> pd.DataFrame:
+    """Use the custom sorting to sort the DataFrame columns by all levels."""
+    dataset = _sort_by(dataset, "lnl", level=2)
+    dataset = _sort_by(dataset, "mid", level=1)
+    return _sort_by(dataset, "top", level=0)
