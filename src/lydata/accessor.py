@@ -360,6 +360,7 @@ class LyDataAccessor:
         self,
         modalities: dict[str, ModalityConfig] | None = None,
         method: Literal["max_llh", "rank"] = "max_llh",
+        subdivisions: Mapping[str, Sequence[str]] | None = None,
     ) -> pd.DataFrame:
         """Combine diagnoses of ``modalities`` using ``method``.
 
@@ -406,7 +407,7 @@ class LyDataAccessor:
             specificities=[mod.spec for mod in modalities.values()],
             sensitivities=[mod.sens for mod in modalities.values()],
             method=method,
-            subdivisions={},
+            subdivisions=subdivisions,
         )
 
     def augment(
@@ -466,12 +467,19 @@ class LyDataAccessor:
         if modalities is None:
             modalities = get_default_modalities()
 
-        combined = self.combine(modalities=modalities, method=method)
+        # Originally, I thought we could just combine and not augment the super- and
+        # sub-levels, but then we discard the involvement probability information from
+        # the original modalities.
+        combined = self.combine(
+            modalities=modalities,
+            method=method,
+            subdivisions=subdivisions,
+        )
         combined = pd.concat({method: combined}, axis="columns")
         combined.index = self._obj.index
         enhanced: LyDataFrame = pd.concat([self._obj, combined], axis="columns")
 
-        for modality in list(modalities.keys()) + [method]:
+        for modality in list(modalities.keys()):
             if modality not in enhanced.columns:
                 continue
 
