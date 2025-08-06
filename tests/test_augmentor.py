@@ -97,3 +97,24 @@ def test_usz_patient_usz0079() -> None:
     assert enhanced.iloc[0].max_llh.ipsi.II == True
     assert pd.isna(enhanced.iloc[0].max_llh.ipsi.IIa)
     assert pd.isna(enhanced.iloc[0].max_llh.ipsi.IIb)
+
+
+def test_2025_usz_311() -> None:
+    """Check that this patient..."""
+    usz_raw = next(
+        lydata.load_datasets(
+            year=2025,
+            institution="usz",
+            use_github=True,
+            repo_name="lycosystem/lydata.private",
+            ref="4b519c6a23e9eda00fad7a1e9dedae42b161754d",
+        ),
+    )
+    idx = usz_raw.ly.id == "2025-USZ-311"
+    patient = usz_raw.loc[idx]
+    assert len(patient) == 1
+    assert patient.ly.date.iloc[0] == "2013-06-03"
+
+    enhanced = patient.ly.enhance()
+    assert len(enhanced) == 1
+    assert enhanced.iloc[0].max_llh.ipsi.II == False
