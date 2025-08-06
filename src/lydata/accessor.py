@@ -47,9 +47,12 @@ warnings.simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
 AggFuncType = dict[str | tuple[str, str, str], Callable[[pd.Series], pd.Series]]
 
 
-@dataclass
+@dataclass  # we use a dataclass over pydantic, because it allows positional arguments
 class QueryPortion:
-    """Dataclass for storing the portion of a query."""
+    """Dataclass for storing the portion of a query.
+
+    An instance of this is returned by the :py:meth:`LyDataAccessor.portion` method.
+    """
 
     match: int
     total: int
@@ -94,7 +97,7 @@ class QueryPortion:
         >>> QueryPortion(2, 5).percent
         40.0
         """
-        return self.ratio * 100
+        return self.ratio * 100.0
 
     def invert(self) -> QueryPortion:
         """Return the inverted portion.
@@ -204,7 +207,7 @@ class LyDataAccessor:
             This method assumes that all top-level columns are modalities, except for
             some predefined non-modality columns. For some custom dataset, this may not
             be correct. In that case, you should provide a list of columns to
-            ``_filter``, i.e., the columns that are *not* modalities.
+            ``ignore_cols``, i.e., the columns that are *not* modalities.
         """
         top_level_cols = self._obj.columns.get_level_values(0)
         modalities = top_level_cols.unique().tolist()
@@ -295,7 +298,7 @@ class LyDataAccessor:
         The ``agg_funcs`` argument is a mapping of column names to functions that
         receive a :py:class:`pd.Series` and return a :py:class:`pd.Series`. The default
         is a useful selection of statistics for the most common columns. E.g., for the
-        column ``('patient', 'info', 'age')`` (or its short column name ``age``), the
+        column ``('patient', 'core', 'age')`` (or its short column name ``age``), the
         default function returns the value counts.
 
         The ``use_shortnames`` argument determines whether the output should use the
@@ -314,9 +317,9 @@ class LyDataAccessor:
          'hpv': {True: 2, False: 1, None: 1},
          't_stage': {2: 2, 3: 1, 1: 1}}
         >>> df = pd.DataFrame({
-        ...     ('patient', 'info', 'age'): [61, 52, 73, 61],
-        ...     ('patient', 'info', 'hpv_status'): [True, False, None, True],
-        ...     ('tumor', 'info', 't_stage'): [2, 3, 1, 2],
+        ...     ('patient', 'core', 'age'): [61, 52, 73, 61],
+        ...     ('patient', 'core', 'hpv_status'): [True, False, None, True],
+        ...     ('tumor', 'core', 't_stage'): [2, 3, 1, 2],
         ... })
         >>> df.ly.stats()   # doctest: +NORMALIZE_WHITESPACE
         {'age': {61: 2, 52: 1, 73: 1},
@@ -343,7 +346,7 @@ class LyDataAccessor:
         self,
         modalities: dict[str, ModalityConfig] | None = None,
     ) -> dict[str, ModalityConfig]:
-        """Return only those ``modalities`` present in data."""
+        """Keep only those ``modalities`` present in data."""
         if modalities is None:
             modalities = get_default_modalities()
 
@@ -367,8 +370,19 @@ class LyDataAccessor:
         diagnosis is chosen for each patient and level based on the sensitivity and
         specificity of the given list of ``modalities``.
 
-        The result contains only the combined columns. The intended use is to
-        :py:meth:`~pandas.DataFrame.update` the original DataFrame with the result.
+        The result contains only the combined columns and no top-level header. This
+        means that if you want to add that to the original DataFrame, you could do so
+        like this:
+
+        .. code-block:: python
+
+            combined = data.ly.combine()
+            combined_full_header = pd.concat({"foo": combined}, axis="columns")
+            combined_full_header.index = data.index
+            data = pd.concat([data, combined_full_header], axis="columns")
+
+        The method :py:func:`.enhance` is a shorthand for combining, augmenting, and
+        joining the results in a way similar to that example above.
 
         >>> df = pd.DataFrame({
         ...     ('CT'       , 'ipsi', 'I'): [False, True , False,  True, None],
@@ -402,10 +416,13 @@ class LyDataAccessor:
     ) -> pd.DataFrame:
         """Complete the sub- and superlevel involvement columns.
 
-        Internally, this calls the :py:func:`~augmentor.combine_and_augment_levels`
-        function, but only with one single modality. This is useful if the intention
-        is not to combine multiple modalities, but rather to fill in the missing
-        super- and sub-level involvement columns for a single modality.
+        This is useful if the intention is not to combine multiple modalities, but
+        rather to fill in the missing super- and sub-level involvement columns for a
+        single modality.
+
+        Like the :py:meth:`~LyDataAccessor.combine` method, the returned DataFrame
+        only has a two-level header. So, for combining this with the original data,
+        one has to perform additional steps. Or use the :py:meth:`.enhance` method.
 
         >>> df = pd.DataFrame({
         ...     ('MRI', 'ipsi'  , 'I' ): [True , False, False, None],
@@ -444,7 +461,7 @@ class LyDataAccessor:
 
         This first runs the :py:meth:`~LyDataAccessor.combine` method and after that
         the :py:meth:`~LyDataAccessor.augment` for every modality in ``modalities``
-        and the newly combined ``method``.
+        and the newly combined ``method`` column.
         """
         if modalities is None:
             modalities = get_default_modalities()
@@ -453,7 +470,6 @@ class LyDataAccessor:
         combined = pd.concat({method: combined}, axis="columns")
         combined.index = self._obj.index
         enhanced: LyDataFrame = pd.concat([self._obj, combined], axis="columns")
-        enhanced, _ = enhanced.align(combined, axis="columns")
 
         for modality in list(modalities.keys()) + [method]:
             if modality not in enhanced.columns:
@@ -466,13 +482,13 @@ class LyDataAccessor:
             augmented = pd.concat({modality: augmented}, axis="columns")
             augmented.index = enhanced.index
             enhanced = replace(left=enhanced, right=augmented)
-            enhanced, _ = enhanced.align(augmented, axis="columns")
 
         return _sort_all(enhanced)
 
 
+# Using the class below instead of pd.DataFrame enables IDE type hints.
 class LyDataFrame(pd.DataFrame):
-    """Type hint for lyDATA tables when using type checkers."""
+    """Subclass of a pandas DataFrame with a custom lydata accessor."""
 
     ly: LyDataAccessor
-    """Type hint for the lydata accessor."""
+    """The custom lydata accessor for these DataFrame subclass instances."""

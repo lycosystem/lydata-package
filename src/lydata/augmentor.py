@@ -1,4 +1,16 @@
-"""Provides functions for augmenting and enhancing the lyDATA tables."""
+"""Provides functions for augmenting and enhancing the lyDATA tables.
+
+This module does the heavy lifting of inferring the most likely true involvment based
+on several - possibly conflicting - diagnoses and their sensitivities and
+specificities. It also resolves the sub- and super-level involvement information,
+e.g. if a sublevel is involved, the superlevel is also involved, and vice-versa.
+
+All this is achieved in the :py:func:`combine_and_augment_levels` function, which is
+also used by the :py:meth:`~lydata.accessor.LyDataAccessor.combine`,
+:py:meth:`~lydata.accessor.LyDataAccessor.augment`, and
+:py:meth:`~lydata.accessor.LyDataAccessor.enhance` methods of the
+:py:class:`~lydata.accessor.LyDataAccessor` class.
+"""
 
 from collections.abc import Mapping, Sequence
 from itertools import product

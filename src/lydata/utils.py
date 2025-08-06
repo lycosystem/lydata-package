@@ -19,7 +19,7 @@ def get_github_auth(
     user: str | None = None,
     password: str | None = None,
 ) -> Auth.Auth | None:
-    """Get the GitHub authentication object."""
+    """Get the GitHub authentication object from arguments or environment variables."""
     token = token or os.getenv("GITHUB_TOKEN")
     user = user or os.getenv("GITHUB_USER")
     password = password or os.getenv("GITHUB_PASSWORD")
@@ -368,7 +368,7 @@ def _sort_by(
 
 
 def _sort_all(dataset: pd.DataFrame) -> pd.DataFrame:
-    """Sort the DataFrame columns by all levels."""
+    """Use the custom sorting to sort the DataFrame columns by all levels."""
     dataset = _sort_by(dataset, "lnl", level=2)
     dataset = _sort_by(dataset, "mid", level=1)
     return _sort_by(dataset, "top", level=0)
