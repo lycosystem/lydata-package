@@ -42,7 +42,7 @@ _LNLS = [
 class PatientInfo(BaseModel):
     """Basic required patient information."""
 
-    id: str | int = Field(description="Unique but anonymized identifier for a patient.")
+    id: str = Field(description="Unique but anonymized identifier for a patient.")
     institution: str = Field(description="Hospital where the patient was treated.")
     sex: Literal["male", "female"] = Field(description="Biological sex of the patient.")
     age: int = Field(
@@ -101,7 +101,7 @@ class PatientRecord(BaseModel):
     As of now, this only contains the patient information.
     """
 
-    info: PatientInfo = Field(default_factory=PatientInfo, alias="core")
+    core: PatientInfo = Field(default_factory=PatientInfo, alias="core")
 
 
 class TumorInfo(BaseModel):
@@ -148,7 +148,7 @@ class TumorRecord(BaseModel):
     As of now, this only contains the tumor information.
     """
 
-    info: TumorInfo = Field(default_factory=TumorInfo, alias="core")
+    core: TumorInfo = Field(default_factory=TumorInfo, alias="core")
 
 
 def create_lnl_field(lnl: str) -> tuple[type, Field]:
@@ -180,7 +180,7 @@ UnilateralInvolvementInfo = create_model(
 class ModalityRecord(BaseModel):
     """A record of the involvement patterns of a diagnostic or pathological modality."""
 
-    info: ModalityInfo = Field(default_factory=ModalityInfo)
+    core: ModalityInfo = Field(default_factory=ModalityInfo)
     ipsi: UnilateralInvolvementInfo = Field(
         description="Unilateral involvement of the ipsilateral side.",
         default_factory=UnilateralInvolvementInfo,
