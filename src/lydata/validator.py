@@ -17,10 +17,12 @@ platform database.
 """
 
 import sys
+from collections.abc import Mapping
 from typing import Any
 
 from loguru import logger
-from pydantic import BaseModel, Field, create_model
+from pandas import PeriodDtype
+from pydantic import BaseModel, Field, PastDate, create_model
 
 from lydata import loader
 from lydata.accessor import LyDataAccessor, LyDataFrame  # noqa: F401
@@ -142,30 +144,80 @@ def get_field_annotations(
     for field_name, field_info in model.model_fields.items():
         if issubclass(field_info.annotation, BaseModel):
             annotations[field_name] = get_field_annotations(field_info.annotation)
-        elif isinstance(field_info.annotation, type):
+        else:
             annotations[field_name] = field_info.annotation
 
     return annotations
 
 
-def cast_types(dataset: LyDataFrame) -> LyDataFrame:
-    """Cast the types of the dataset to the expected types."""
+def cast_types(
+    dataset: LyDataFrame,
+    casters: Mapping[type, str] | None = None,
+) -> LyDataFrame:
+    """Cast the types of the ``dataset`` to the expected types.
+
+    This function uses the annotations of the Pydantic schema to cast the individual
+    columns of the ``dataset`` to the expected types. It uses the ``casters`` mapping
+    to determine the type to cast to. By default, it uses the following mapping:
+
+    .. code-block:: python
+
+        {
+            int: int,
+            int | None: "Int64",
+            float: float,
+            float | None: "Float64",
+            str: "string",
+            str | None: "string",
+            bool: bool,
+            bool | None: "boolean",
+            PastDate: PeriodDtype("D"),
+        }
+
+    That way, pandas uses e.g. the nullable integer type ``Int64`` if we specify in
+    pydantic that a field can be an integer or None. If you want to use a different
+    mapping, you can pass it as the ``casters`` argument.
+    """
+    if casters is None:
+        casters = {
+            int: int,
+            int | None: "Int64",
+            float: float,
+            float | None: "Float64",
+            str: "string",
+            str | None: "string",
+            bool: bool,
+            bool | None: "boolean",
+            PastDate: PeriodDtype("D"),
+            PastDate | None: PeriodDtype("D"),
+        }
+
     modalities = dataset.ly.get_modalities()
     FullRecord = create_full_record_model(modalities)  # noqa: N806
     annotations = get_field_annotations(FullRecord)
     annotations = flatten(annotations, max_depth=3)
-    ...
-    # TODO: Implement type casting logic based on annotations
+    dtypes = {}
+
+    for col, annotation in annotations.items():
+        if col not in dataset.columns:
+            continue
+
+        dtypes[col] = casters.get(annotation, object)
+
+    result = dataset.astype(dtypes)
+    logger.debug(f"Cast types: {dtypes}")
+    return result
 
 
 if __name__ == "__main__":
     logger.enable("lydata")
     logger.remove()
-    logger.add(sys.stderr, level="INFO")
+    logger.add(sys.stderr, level="DEBUG")
     dataset = next(
         loader.load_datasets(
             repo_name="lycosystem/lydata.private",
-            ref="4b519c6a23e9eda00fad7a1e9dedae42b161754d",
+            ref="6c56a630f307ffea12a2f071f18316f605beaa08",
         )
     )
-    validate(dataset)
+    dataset = cast_types(dataset)
+    # validate(dataset)
