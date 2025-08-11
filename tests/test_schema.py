@@ -15,7 +15,7 @@ from lydata.schema import (
 
 
 @pytest.fixture
-def patient_info_dict() -> dict[str, Any]:
+def patient_core_dict() -> dict[str, Any]:
     """Fixture for a sample patient info."""
     return {
         "id": "12345",
@@ -35,7 +35,7 @@ def patient_info_dict() -> dict[str, Any]:
 
 
 @pytest.fixture
-def tumor_info_dict() -> dict[str, Any]:
+def tumor_core_dict() -> dict[str, Any]:
     """Fixture for a sample tumor info."""
     return {
         "location": "gums",
@@ -47,60 +47,60 @@ def tumor_info_dict() -> dict[str, Any]:
     }
 
 
-def test_patient_info(patient_info_dict: dict[str, Any]) -> None:
+def test_patient_core(patient_core_dict: dict[str, Any]) -> None:
     """Test the PatientInfo schema."""
-    patient_info = PatientInfo(**patient_info_dict)
+    patient_info = PatientInfo(**patient_core_dict)
 
-    for key, dict_value in patient_info_dict.items():
+    for key, dict_value in patient_core_dict.items():
         model_value = getattr(patient_info, key)
         if isinstance(model_value, datetime.date):
             model_value = model_value.isoformat()
         assert model_value == dict_value, f"Mismatch for {key}"
 
 
-def test_tumor_info(tumor_info_dict: dict[str, Any]) -> None:
+def test_tumor_core(tumor_core_dict: dict[str, Any]) -> None:
     """Test the TumorInfo schema."""
-    tumor_info = TumorInfo(**tumor_info_dict)
+    tumor_core = TumorInfo(**tumor_core_dict)
 
-    for key, value in tumor_info_dict.items():
-        assert getattr(tumor_info, key) == value, f"Mismatch for {key}"
+    for key, value in tumor_core_dict.items():
+        assert getattr(tumor_core, key) == value, f"Mismatch for {key}"
 
 
 @pytest.fixture
-def patient_info(patient_info_dict: dict[str, Any]) -> PatientInfo:
+def patient_core(patient_core_dict: dict[str, Any]) -> PatientInfo:
     """Fixture for a sample PatientInfo instance."""
-    return PatientInfo(**patient_info_dict)
+    return PatientInfo(**patient_core_dict)
 
 
 @pytest.fixture
-def tumor_info(tumor_info_dict: dict[str, Any]) -> TumorInfo:
+def tumor_core(tumor_core_dict: dict[str, Any]) -> TumorInfo:
     """Fixture for a sample TumorInfo instance."""
-    return TumorInfo(**tumor_info_dict)
+    return TumorInfo(**tumor_core_dict)
 
 
-def test_patient_record(patient_info: PatientInfo) -> None:
+def test_patient_record(patient_core: PatientInfo) -> None:
     """Test the PatientRecord schema."""
-    record = PatientRecord(_=patient_info)
+    record = PatientRecord(core=patient_core)
 
-    assert record.info == patient_info, "PatientRecord info does not match PatientInfo"
+    assert record.core == patient_core, "PatientRecord info does not match PatientInfo"
 
 
-def test_tumor_record(tumor_info: TumorInfo) -> None:
+def test_tumor_record(tumor_core: TumorInfo) -> None:
     """Test the TumorRecord schema."""
-    record = TumorRecord(_=tumor_info)
+    record = TumorRecord(core=tumor_core)
 
-    assert record.info == tumor_info, "TumorRecord info does not match TumorInfo"
+    assert record.core == tumor_core, "TumorRecord info does not match TumorInfo"
 
 
 @pytest.fixture
-def complete_record(patient_info: PatientInfo, tumor_info: TumorInfo) -> BaseRecord:
+def complete_record(patient_core: PatientInfo, tumor_core: TumorInfo) -> BaseRecord:
     """Fixture for a sample CompleteRecord instance."""
     return BaseRecord(
-        patient=PatientRecord(_=patient_info),
-        tumor=TumorRecord(_=tumor_info),
+        patient=PatientRecord(core=patient_core),
+        tumor=TumorRecord(core=tumor_core),
     )
 
 
 def test_complete_record(complete_record: BaseRecord) -> None:
     """Test the CompleteRecord schema."""
-    assert complete_record.patient.info.id == "12345", "Patient ID does not match"
+    assert complete_record.patient.core.id == "12345", "Patient ID does not match"
