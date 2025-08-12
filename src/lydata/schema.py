@@ -94,6 +94,8 @@ class PatientInfo(BaseModel):
         ):
             raise ValueError("If nicotine abuse is False, pack_years cannot be > 0.")
 
+        return self
+
 
 class PatientRecord(BaseModel):
     """A patient's record.
@@ -101,7 +103,7 @@ class PatientRecord(BaseModel):
     As of now, this only contains the patient information.
     """
 
-    core: PatientInfo = Field(default_factory=PatientInfo, alias="core")
+    core: PatientInfo = Field(default_factory=PatientInfo)
 
 
 class TumorInfo(BaseModel):
@@ -116,7 +118,7 @@ class TumorInfo(BaseModel):
         description="Whether the tumor is located on the mid-sagittal line.",
         default=False,
     )
-    extension: bool = Field(
+    extension: bool | None = Field(
         description="Whether the tumor extends over the mid-sagittal line.",
         default=False,
     )
@@ -148,7 +150,7 @@ class TumorRecord(BaseModel):
     As of now, this only contains the tumor information.
     """
 
-    core: TumorInfo = Field(default_factory=TumorInfo, alias="core")
+    core: TumorInfo = Field(default_factory=TumorInfo)
 
 
 def create_lnl_field(lnl: str) -> tuple[type, Field]:
@@ -191,6 +193,17 @@ class ModalityRecord(BaseModel):
     )
 
 
+def create_modality_field(modality: str) -> tuple[type, Field]:
+    """Create a field for a specific modality."""
+    return (
+        ModalityRecord,
+        Field(
+            default_factory=ModalityRecord,
+            description=f"Involvement data for modality {modality}",
+        ),
+    )
+
+
 class BaseRecord(BaseModel):
     """A basic record of a patient.
 
@@ -200,3 +213,12 @@ class BaseRecord(BaseModel):
 
     patient: PatientRecord = Field(default_factory=PatientRecord)
     tumor: TumorRecord = Field(default_factory=TumorRecord)
+
+
+def create_full_record_model(modalities: list[str]) -> type:
+    """Create a Pydantic model for a full record with all modalities."""
+    return create_model(
+        "FullRecord",
+        __base__=BaseRecord,
+        **{mod: create_modality_field(mod) for mod in modalities},
+    )
