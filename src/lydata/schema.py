@@ -283,7 +283,7 @@ def create_full_record_model(
     )
 
 
-def write_schema_to_file(
+def _write_schema_to_file(
     schema: type[BaseModel] | None = None,
     file_path: Path = Path("schema.json"),
 ) -> None:
@@ -305,4 +305,4 @@ if __name__ == "__main__":
     logger.enable("lydata")
     logger.remove()
     logger.add(sys.stderr, level="DEBUG")
-    write_schema_to_file()
+    _write_schema_to_file()
