@@ -1,7 +1,7 @@
 """Test the casting and validation of lydata datasets."""
 
 from lydata import load_datasets
-from lydata.validator import cast_types
+from lydata.validator import cast_dtypes
 
 
 def test_casting() -> None:
@@ -16,7 +16,7 @@ def test_casting() -> None:
             ref="6c56a630f307ffea12a2f071f18316f605beaa08",
         )
     )
-    clb_casted = cast_types(clb_raw)
+    clb_casted = cast_dtypes(clb_raw)
 
     assert clb_casted.patient.core.id.dtype == "string"
     assert clb_casted.patient.core.age.dtype == "int64"

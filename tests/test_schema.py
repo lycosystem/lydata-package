@@ -7,9 +7,9 @@ import pytest
 
 from lydata.schema import (
     BaseRecord,
-    PatientInfo,
+    PatientCore,
     PatientRecord,
-    TumorInfo,
+    TumorCore,
     TumorRecord,
 )
 
@@ -49,7 +49,7 @@ def tumor_core_dict() -> dict[str, Any]:
 
 def test_patient_core(patient_core_dict: dict[str, Any]) -> None:
     """Test the PatientInfo schema."""
-    patient_info = PatientInfo(**patient_core_dict)
+    patient_info = PatientCore(**patient_core_dict)
 
     for key, dict_value in patient_core_dict.items():
         model_value = getattr(patient_info, key)
@@ -60,32 +60,32 @@ def test_patient_core(patient_core_dict: dict[str, Any]) -> None:
 
 def test_tumor_core(tumor_core_dict: dict[str, Any]) -> None:
     """Test the TumorInfo schema."""
-    tumor_core = TumorInfo(**tumor_core_dict)
+    tumor_core = TumorCore(**tumor_core_dict)
 
     for key, value in tumor_core_dict.items():
         assert getattr(tumor_core, key) == value, f"Mismatch for {key}"
 
 
 @pytest.fixture
-def patient_core(patient_core_dict: dict[str, Any]) -> PatientInfo:
+def patient_core(patient_core_dict: dict[str, Any]) -> PatientCore:
     """Fixture for a sample PatientInfo instance."""
-    return PatientInfo(**patient_core_dict)
+    return PatientCore(**patient_core_dict)
 
 
 @pytest.fixture
-def tumor_core(tumor_core_dict: dict[str, Any]) -> TumorInfo:
+def tumor_core(tumor_core_dict: dict[str, Any]) -> TumorCore:
     """Fixture for a sample TumorInfo instance."""
-    return TumorInfo(**tumor_core_dict)
+    return TumorCore(**tumor_core_dict)
 
 
-def test_patient_record(patient_core: PatientInfo) -> None:
+def test_patient_record(patient_core: PatientCore) -> None:
     """Test the PatientRecord schema."""
     record = PatientRecord(core=patient_core)
 
     assert record.core == patient_core, "PatientRecord info does not match PatientInfo"
 
 
-def test_tumor_record(tumor_core: TumorInfo) -> None:
+def test_tumor_record(tumor_core: TumorCore) -> None:
     """Test the TumorRecord schema."""
     record = TumorRecord(core=tumor_core)
 
@@ -93,7 +93,7 @@ def test_tumor_record(tumor_core: TumorInfo) -> None:
 
 
 @pytest.fixture
-def complete_record(patient_core: PatientInfo, tumor_core: TumorInfo) -> BaseRecord:
+def complete_record(patient_core: PatientCore, tumor_core: TumorCore) -> BaseRecord:
     """Fixture for a sample CompleteRecord instance."""
     return BaseRecord(
         patient=PatientRecord(core=patient_core),
