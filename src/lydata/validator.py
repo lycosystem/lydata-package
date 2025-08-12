@@ -18,15 +18,14 @@ platform database.
 
 import sys
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal
 
 from loguru import logger
 from pandas import PeriodDtype
-from pydantic import BaseModel, Field, PastDate, create_model
+from pydantic import BaseModel, PastDate
 
-from lydata import loader
 from lydata.accessor import LyDataAccessor, LyDataFrame  # noqa: F401
-from lydata.schema import BaseRecord, ModalityRecord
+from lydata.schema import create_full_record_model
 
 
 def flatten(
@@ -81,34 +80,6 @@ def unflatten(flat: dict) -> dict:
     return result
 
 
-def move_value(mapping: dict[str, Any], from_key: str, to_key: str) -> None:
-    """Move a key in a dictionary to another key."""
-    if from_key not in mapping:
-        raise KeyError(f"Key '{from_key}' not found in mapping.")
-
-    mapping[to_key] = mapping.pop(from_key)
-
-
-def create_modality_field(modality: str) -> tuple[type, Field]:
-    """Create a field for a specific modality."""
-    return (
-        ModalityRecord,
-        Field(
-            default_factory=ModalityRecord,
-            description=f"Involvement data for modality {modality}",
-        ),
-    )
-
-
-def create_full_record_model(modalities: list[str]) -> type:
-    """Create a Pydantic model for a full record with all modalities."""
-    return create_model(
-        "FullRecord",
-        __base__=BaseRecord,
-        **{mod: create_modality_field(mod) for mod in modalities},
-    )
-
-
 def validate(dataset: LyDataFrame) -> bool:
     """Validate the given dataset against the lyDATA schema."""
     modalities = dataset.ly.get_modalities()
@@ -128,7 +99,7 @@ def validate(dataset: LyDataFrame) -> bool:
     return True
 
 
-def get_field_annotations(
+def _get_field_annotations(
     model: type[BaseModel],
 ) -> dict[str, Any]:
     """Get the field annotations of a three-level nested Pydantic model.
@@ -143,73 +114,76 @@ def get_field_annotations(
     annotations = {}
     for field_name, field_info in model.model_fields.items():
         if issubclass(field_info.annotation, BaseModel):
-            annotations[field_name] = get_field_annotations(field_info.annotation)
+            annotations[field_name] = _get_field_annotations(field_info.annotation)
         else:
             annotations[field_name] = field_info.annotation
 
     return annotations
 
 
-def cast_types(
+def _get_default_casters() -> Mapping[type, str]:
+    """Get the default dtype casters for the lyDATA schema."""
+    return {
+        int: int,
+        int | None: "Int64",
+        float: float,
+        float | None: "Float64",
+        str: "string",
+        str | None: "string",
+        bool: bool,
+        bool | None: "boolean",
+        PastDate: PeriodDtype("D"),
+        PastDate | None: PeriodDtype("D"),
+        Literal["male", "female"]: "string",
+        Literal["c", "p"]: "string",
+    }
+
+
+def cast_dtypes(
     dataset: LyDataFrame,
     casters: Mapping[type, str] | None = None,
 ) -> LyDataFrame:
-    """Cast the types of the ``dataset`` to the expected types.
+    """Cast the dtypes of the ``dataset`` to the expected types.
 
     This function uses the annotations of the Pydantic schema to cast the individual
     columns of the ``dataset`` to the expected types. It uses the ``casters`` mapping
-    to determine the type to cast to. By default, it uses the following mapping:
-
-    .. code-block:: python
-
-        {
-            int: int,
-            int | None: "Int64",
-            float: float,
-            float | None: "Float64",
-            str: "string",
-            str | None: "string",
-            bool: bool,
-            bool | None: "boolean",
-            PastDate: PeriodDtype("D"),
-        }
+    to determine the type to cast to. By default, it uses the mapping from the
+    :py:func:`_get_default_casters` function.
 
     That way, pandas uses e.g. the nullable integer type ``Int64`` if we specify in
     pydantic that a field can be an integer or None. If you want to use a different
     mapping, you can pass it as the ``casters`` argument.
     """
     if casters is None:
-        casters = {
-            int: int,
-            int | None: "Int64",
-            float: float,
-            float | None: "Float64",
-            str: "string",
-            str | None: "string",
-            bool: bool,
-            bool | None: "boolean",
-            PastDate: PeriodDtype("D"),
-            PastDate | None: PeriodDtype("D"),
-        }
+        casters = _get_default_casters()
 
     modalities = dataset.ly.get_modalities()
     FullRecord = create_full_record_model(modalities)  # noqa: N806
-    annotations = get_field_annotations(FullRecord)
+    annotations = _get_field_annotations(FullRecord)
     annotations = flatten(annotations, max_depth=3)
     dtypes = {}
 
-    for col, annotation in annotations.items():
-        if col not in dataset.columns:
+    for col in dataset.columns:
+        annotation = annotations.get(col, None)
+        fallback = dataset[col].dtype
+
+        if annotation is None:
+            logger.warning(
+                f"No annotation found for column '{col}'. "
+                f"Using dtype {fallback} instead."
+            )
             continue
 
-        dtypes[col] = casters.get(annotation, object)
+        dtypes[col] = casters.get(annotation, fallback)
 
     result = dataset.astype(dtypes)
-    logger.debug(f"Cast types: {dtypes}")
+    logger.success(f"Cast types: {result.dtypes.to_dict()}")
     return result
 
 
 if __name__ == "__main__":
+    from lydata import loader
+
     logger.enable("lydata")
     logger.remove()
     logger.add(sys.stderr, level="DEBUG")
@@ -219,5 +193,5 @@ if __name__ == "__main__":
             ref="6c56a630f307ffea12a2f071f18316f605beaa08",
         )
     )
-    dataset = cast_types(dataset)
-    # validate(dataset)
+    dataset = cast_dtypes(dataset)
+    validate(dataset)
