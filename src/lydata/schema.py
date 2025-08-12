@@ -6,18 +6,25 @@ Also, it may be used to create a HTML form to enter patient data.
 
 from __future__ import annotations
 
+import json
+import sys
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import pandas as pd
+from loguru import logger
 from pydantic import (
     BaseModel,
     BeforeValidator,
     Field,
     PastDate,
+    RootModel,
     create_model,
     field_validator,
     model_validator,
 )
+
+from lydata.utils import get_default_modalities
 
 _LNLS = [
     "I",
@@ -39,8 +46,13 @@ _LNLS = [
 ]
 
 
-class PatientInfo(BaseModel):
-    """Basic required patient information."""
+class PatientCore(BaseModel):
+    """Basic required patient information.
+
+    This includes demographic information, such as age and sex, as well as some risk
+    factors for head and neck cancer, including HPV status, alcohol and nicotine abuse,
+    etc.
+    """
 
     id: str = Field(description="Unique but anonymized identifier for a patient.")
     institution: str = Field(description="Hospital where the patient was treated.")
@@ -87,7 +99,7 @@ class PatientInfo(BaseModel):
         return None if pd.isna(value) else value
 
     @model_validator(mode="after")
-    def check_nicotine_and_pack_years(self) -> PatientInfo:
+    def check_nicotine_and_pack_years(self) -> PatientCore:
         """Ensure that if nicotine abuse is False, pack_years is not > 0."""
         if not self.nicotine_abuse and (
             self.pack_years is not None and self.pack_years > 0
@@ -100,14 +112,24 @@ class PatientInfo(BaseModel):
 class PatientRecord(BaseModel):
     """A patient's record.
 
-    As of now, this only contains the patient information.
+    Because the final dataset has a three-level header, this record holds only the
+    key ``core`` under which we store the actual patient information defined in the
+    :py:class:`PatientCore` model.
     """
 
-    core: PatientInfo = Field(default_factory=PatientInfo)
+    core: PatientCore = Field(
+        title="Core",
+        description="Core information about the patient.",
+        default_factory=PatientCore,
+    )
 
 
-class TumorInfo(BaseModel):
-    """Information about the tumor of a patient."""
+class TumorCore(BaseModel):
+    """Information about the tumor of a patient.
+
+    This information characterizes the primary tumor via its location, ICD-O-3 subsite,
+    T-category and so on.
+    """
 
     location: str = Field(description="Primary tumor location.")
     subsite: str = Field(
@@ -147,10 +169,15 @@ class TumorInfo(BaseModel):
 class TumorRecord(BaseModel):
     """A tumor record of a patient.
 
-    As of now, this only contains the tumor information.
+    As with the patient record, this holds only the key ``core`` under which we
+    store the actual tumor information defined in the :py:class:`TumorCore` model.
     """
 
-    core: TumorInfo = Field(default_factory=TumorInfo)
+    core: TumorCore = Field(
+        title="Core",
+        description="Core information about the tumor.",
+        default_factory=TumorCore,
+    )
 
 
 def create_lnl_field(lnl: str) -> tuple[type, Field]:
@@ -161,11 +188,8 @@ def create_lnl_field(lnl: str) -> tuple[type, Field]:
     )
 
 
-class ModalityInfo(BaseModel):
-    """Basic info about a diagnostic/pathological modality.
-
-    Contains only the date of the modality as of now.
-    """
+class ModalityCore(BaseModel):
+    """Basic info about a diagnostic/pathological modality."""
 
     date: PastDate | None = Field(
         description="Date of the diagnostic or pathological modality.",
@@ -180,15 +204,27 @@ UnilateralInvolvementInfo = create_model(
 
 
 class ModalityRecord(BaseModel):
-    """A record of the involvement patterns of a diagnostic or pathological modality."""
+    """Involvement patterns of a diagnostic or pathological modality.
 
-    core: ModalityInfo = Field(default_factory=ModalityInfo)
+    This holds some basic information about the modality, which is currently limited to
+    the date its information was collected (e.g. the date of the PET/CT scan).
+
+    Most importantly, this holds the ipsi- and contralateral lymph node level
+    involvement patterns under the respective keys ``ipsi`` and ``contra``.
+    """
+
+    core: ModalityCore = Field(
+        title="Core",
+        default_factory=ModalityCore,
+    )
     ipsi: UnilateralInvolvementInfo = Field(
-        description="Unilateral involvement of the ipsilateral side.",
+        title="Ipsilateral Involvement",
+        description="Involvement patterns of the ipsilateral side.",
         default_factory=UnilateralInvolvementInfo,
     )
     contra: UnilateralInvolvementInfo = Field(
-        description="Unilateral involvement of the contralateral side.",
+        title="Contralateral Involvement",
+        description="Involvement patterns of the contralateral side.",
         default_factory=UnilateralInvolvementInfo,
     )
 
@@ -198,8 +234,9 @@ def create_modality_field(modality: str) -> tuple[type, Field]:
     return (
         ModalityRecord,
         Field(
+            title=modality,
+            description=f"Involvement patterns as observed using {modality}.",
             default_factory=ModalityRecord,
-            description=f"Involvement data for modality {modality}",
         ),
     )
 
@@ -211,14 +248,61 @@ class BaseRecord(BaseModel):
     as the data represents it.
     """
 
-    patient: PatientRecord = Field(default_factory=PatientRecord)
-    tumor: TumorRecord = Field(default_factory=TumorRecord)
+    patient: PatientRecord = Field(
+        title="Patient",
+        description=(
+            "Characterizes the patient via demographic information and risk factors "
+            "associated with head and neck cancer. In order to achieve the three-level "
+            "header structure in the final table, there is a subkey `core` under which "
+            "the actual patient information is stored."
+        ),
+        default_factory=PatientRecord,
+    )
+    tumor: TumorRecord = Field(
+        title="Tumor",
+        description=(
+            "Characterizes the primary tumor via its location, ICD-O-3 subsite, "
+            "T-category and so on. As with the patient record, this has a subkey "
+            "`core` under which the actual tumor information is stored."
+        ),
+        default_factory=TumorRecord,
+    )
 
 
-def create_full_record_model(modalities: list[str]) -> type:
+def create_full_record_model(
+    modalities: list[str],
+    title: str = "FullRecord",
+    **kwargs: dict[str, Any],
+) -> type:
     """Create a Pydantic model for a full record with all modalities."""
     return create_model(
-        "FullRecord",
+        title,
         __base__=BaseRecord,
         **{mod: create_modality_field(mod) for mod in modalities},
+        **kwargs,
     )
+
+
+def write_schema_to_file(
+    schema: type[BaseModel] | None = None,
+    file_path: Path = Path("schema.json"),
+) -> None:
+    """Write the Pydantic schema to a file."""
+    if schema is None:
+        modalities = get_default_modalities()
+        schema = create_full_record_model(modalities, title="Record")
+
+    root_schema = RootModel[list[schema]]
+
+    with open(file_path, "w") as f:
+        json_schema = root_schema.model_json_schema()
+        f.write(json.dumps(json_schema, indent=2))
+
+    logger.success(f"Schema written to {file_path}")
+
+
+if __name__ == "__main__":
+    logger.enable("lydata")
+    logger.remove()
+    logger.add(sys.stderr, level="DEBUG")
+    write_schema_to_file()
