@@ -29,7 +29,6 @@ dependencies = [
     "pydantic",
     "loguru",
     "roman",
-    "fastapi[standard]>=0.116.1",
 ]
 
 [project.urls]
@@ -51,9 +50,6 @@ dev = [
     "pre-commit",
     "git-cliff",
 ]
-
-[project.scripts]
-lycollect = "lydata.collector.__init__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
