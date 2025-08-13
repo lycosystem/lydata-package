@@ -1,14 +1,32 @@
+/**
+ * Client-side helper functions for collecting user input through JSONEditor,
+ * validating it against a fetched JSON Schema, submitting the validated data
+ * to the backend, and presenting a downloadable CSV returned by the server.
+ *
+ * NOTE: Functionality is intentionally unchanged; only readability and
+ * documentation have been improved.
+ */
+
+/**
+ * Ensure an alert element (used to display validation errors) exists.
+ * Creates and appends it if missing.
+ *
+ * @returns {HTMLDivElement} The existing or newly created alert element.
+ */
 function ensureAlertExists() {
-  let alert = document.querySelector('.alert');
-  if (!alert) {
-    alert = document.createElement('div');
-    alert.className = 'alert alert-danger';
-    document.getElementById('editor_holder').appendChild(alert);
+  let alertElement = document.querySelector('.alert');
+  if (!alertElement) {
+    alertElement = document.createElement('div');
   }
-  return alert;
+  alertElement.className = 'alert alert-danger';
+  const editorHolder = document.getElementById('editor_holder');
+  editorHolder.appendChild(alertElement);
+  return alertElement;
 }
 
-
+/**
+ * Remove an existing validation alert if present.
+ */
 function ensureAlertRemoved() {
   const existingAlert = document.querySelector('.alert');
   if (existingAlert) {
@@ -17,7 +35,9 @@ function ensureAlertRemoved() {
   }
 }
 
-
+/**
+ * Remove an existing download button (if it exists) to avoid duplicates.
+ */
 function ensureDownloadButtonRemoved() {
   const existingButton = document.getElementById('download_link');
   if (existingButton) {
@@ -26,46 +46,61 @@ function ensureDownloadButtonRemoved() {
   }
 }
 
-
+/**
+ * Create (or replace) a download button for a CSV blob returned by the server.
+ *
+ * @param {Blob} blob - The CSV data blob to make downloadable.
+ */
 function createDownloadButton(blob) {
   ensureDownloadButtonRemoved();
+
   const url = window.URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.id = "download_link";
-  a.href = url;
-  a.textContent = "Download CSV";
-  a.className = "btn btn-primary";
-  a.download = "lydata_records.csv";
-  document.getElementById('editor_holder').appendChild(a);
-  console.log('Download button created:', a);
+  const downloadLink = document.createElement('a');
+  downloadLink.id = 'download_link';
+  downloadLink.href = url;
+  downloadLink.textContent = 'Download CSV';
+  downloadLink.className = 'btn btn-success';
+  downloadLink.download = 'lydata_records.csv';
+
+  document.getElementById('editor_holder').appendChild(downloadLink);
+  console.log('Download button created:', downloadLink);
 }
 
-
+/**
+ * Send validated editor data to the backend for processing. Expects a CSV blob
+ * in response which is then exposed via a generated download button.
+ *
+ * @param {JSONEditor} editor - The JSONEditor instance from which to read data.
+ */
 function sendEditorData(editor) {
   const data = editor.getValue();
   console.log('Sending data:', data);
 
   fetch('/submit', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
   })
-  .then(response => response.blob())
-  .then(blob => {
-    console.log('Received processed data as blob:', blob);
-    createDownloadButton(blob);
-  });
+    .then(response => response.blob())
+    .then(blob => {
+      console.log('Received processed data as blob:', blob);
+      createDownloadButton(blob);
+    });
+  // (Potential improvement not implemented: add .catch for network errors.)
 }
 
-
+/**
+ * Validate the editor content. If there are validation errors they are
+ * displayed in an alert; otherwise the data is submitted to the backend.
+ *
+ * @param {JSONEditor} editor - The JSONEditor instance to validate & submit.
+ */
 function processEditor(editor) {
   const errors = editor.validate();
 
   if (errors.length) {
     console.error('Validation errors:', errors);
-    let alert = ensureAlertExists();
+    const alert = ensureAlertExists();
     alert.textContent = 'Validation errors: ' + errors.map(e => e.message).join(', ');
   } else {
     console.log('Data successfully validated');
@@ -74,11 +109,10 @@ function processEditor(editor) {
   }
 }
 
-
-fetch("/schema")
+// Fetch the JSON Schema to initialize the editor
+fetch('/schema')
   .then(response => response.json())
   .then(schema => {
-    // Initialize the editor with the fetched schema
     const element = document.getElementById('editor_holder');
     const options = {
       disable_edit_json: true,
@@ -86,11 +120,11 @@ fetch("/schema")
       iconlib: 'bootstrap',
       object_layout: 'grid',
       schema: schema
-    };
-    var editor = new JSONEditor(element, options);
+  };
+  const editor = new JSONEditor(element, options);
 
-    // Hook up the submit button to log to the console
-    document.getElementById('submit').addEventListener('click', function() {
+    // Bind the submit button to validation + submission flow
+    document.getElementById('submit').addEventListener('click', () => {
       console.log('Submit button clicked');
       processEditor(editor);
     });
