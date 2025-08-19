@@ -9,7 +9,7 @@ from lydata.loader import (
     load_datasets,
 )
 from lydata.querier import C, Q
-from lydata.validator import validate_datasets
+from lydata.validator import validate
 
 __author__ = "Roman Ludwig"
 __email__ = "roman.ludwig@usz.ch"
@@ -23,7 +23,7 @@ __all__ = [
     "C",
     "available_datasets",
     "load_datasets",
-    "validate_datasets",
+    "validate",
 ]
 
 logger.disable("lydata")

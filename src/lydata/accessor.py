@@ -493,6 +493,21 @@ class LyDataAccessor:
 
         return _sort_all(enhanced)
 
+    def cast(
+        self,
+        casters: Mapping[type, str] | None = None,
+    ) -> LyDataFrame:
+        """Cast the dtypes of the DataFrame to the expected types.
+
+        This uses the annotations of the Pydantic schema to cast the individual columns
+        of the DataFrame to the expected types. It uses the ``casters`` mapping to
+        determine the type to cast to. By default, it uses the mapping from the
+        :py:func:`_get_default_casters` function.
+        """
+        from lydata.validator import cast_dtypes
+
+        return cast_dtypes(self._obj, casters=casters)
+
 
 # Using the class below instead of pd.DataFrame enables IDE type hints.
 class LyDataFrame(pd.DataFrame):
