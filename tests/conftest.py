@@ -18,3 +18,16 @@ def clb_raw() -> pd.DataFrame:
             ref="4668ff6006764169411d6d198c126b020a7892b2",
         ),
     )
+
+
+@pytest.fixture
+def usz_2025_df() -> lydata.LyDataFrame:
+    """Fixture to load a sample DataFrame from the USZ 2025 dataset."""
+    return next(
+        lydata.load_datasets(
+            year=2025,
+            institution="usz",
+            repo_name="lycosystem/lydata.private",
+            ref="c11011aa928fe43f18e73e42577a0fcee5652d99",
+        )
+    )

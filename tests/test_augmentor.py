@@ -4,7 +4,7 @@ import pandas as pd
 
 import lydata  # noqa: F401
 from lydata.augmentor import combine_and_augment_levels
-from lydata.utils import get_default_modalities
+from lydata.utils import ModalityConfig, get_default_modalities
 
 
 def test_clb_patient_17(clb_raw: pd.DataFrame) -> None:
@@ -79,42 +79,47 @@ def test_usz_patient_9() -> None:
     assert usz_aug.iloc[8].ipsi.III == False
 
 
-def test_usz_patient_usz0079() -> None:
+def test_2025_usz_080(usz_2025_df: lydata.LyDataFrame) -> None:
     """Check that this patient..."""
-    usz_raw = next(
-        lydata.load_datasets(
-            year=2025,
-            institution="usz",
-            subsite="hypopharynx-larynx",
-            use_github=True,
-            repo_name="lycosystem/lydata.private",
-            ref="ab04379a36b6946306041d1d38ad7e97df8ee7ba",
-        ),
-    )
-    idx = usz_raw.ly.id == "USZ0079"
-    patient = usz_raw.loc[idx]
+    idx = usz_2025_df.ly.id == "2025-USZ-080"
+    patient = usz_2025_df.loc[idx]
     enhanced = patient.ly.enhance()
     assert enhanced.iloc[0].max_llh.ipsi.II == True
     assert pd.isna(enhanced.iloc[0].max_llh.ipsi.IIa)
     assert pd.isna(enhanced.iloc[0].max_llh.ipsi.IIb)
 
 
-def test_2025_usz_311() -> None:
+def test_2025_usz_312(usz_2025_df: lydata.LyDataFrame) -> None:
     """Check that this patient..."""
-    usz_raw = next(
-        lydata.load_datasets(
-            year=2025,
-            institution="usz",
-            use_github=True,
-            repo_name="lycosystem/lydata.private",
-            ref="4b519c6a23e9eda00fad7a1e9dedae42b161754d",
-        ),
-    )
-    idx = usz_raw.ly.id == "2025-USZ-311"
-    patient = usz_raw.loc[idx]
+    idx = usz_2025_df.ly.id == "2025-USZ-312"
+    patient = usz_2025_df.loc[idx]
     assert len(patient) == 1
     assert patient.ly.date.iloc[0] == "2013-06-03"
 
     enhanced = patient.ly.enhance()
     assert len(enhanced) == 1
     assert enhanced.iloc[0].max_llh.ipsi.II == False
+
+
+def test_2025_usz_075(usz_2025_df: lydata.LyDataFrame) -> None:
+    """Ensure patient 2025-USZ-075 is correctly enhanced.
+
+    This patient has a pathologically (FNA) confirmed contra II involvement, but PET
+    and planning CT (pCT) are negative. Depending on the sensitivity and specificity
+    values, this leads to a max_llh of True or False for the contra II level.
+    """
+    idx = usz_2025_df.ly.id == "2025-USZ-075"
+    patient = usz_2025_df.loc[idx]
+    assert len(patient) == 1
+    assert patient.ly.date.iloc[0] == "2015-11-23"
+    assert patient.FNA.contra.II.iloc[0] == True
+
+    enhanced = patient.ly.enhance(
+        modalities={
+            "PET": ModalityConfig(spec=0.86, sens=0.79),
+            "FNA": ModalityConfig(spec=0.98, sens=0.80, kind="pathological"),
+            # "pCT": ModalityConfig(spec=0.86, sens=0.81),
+        }
+    )
+    assert len(enhanced) == 1
+    assert enhanced.iloc[0].max_llh.contra.II == True
