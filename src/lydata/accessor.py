@@ -385,6 +385,14 @@ class LyDataAccessor:
         The method :py:func:`.enhance` is a shorthand for combining, augmenting, and
         joining the results in a way similar to that example above.
 
+        .. warning::
+
+            Here, the default value for ``subdivisions`` is set to an empty dictionary.
+            This is because on the one hand, we still want to retain the functionality
+            of combining and augmenting in one step (necessary in the
+            :py:meth:`.enhance` method), but if not explicitly chosen, we keep only
+            the originally provided levels.
+
         >>> df = pd.DataFrame({
         ...     ('CT'       , 'ipsi', 'I'): [False, True , False,  True, None],
         ...     ('MRI'      , 'ipsi', 'I'): [False, True , True ,  None, None],
@@ -469,6 +477,13 @@ class LyDataAccessor:
         the :py:meth:`~LyDataAccessor.augment` for every modality in ``modalities``
         and the newly combined ``method`` column.
         """
+        if subdivisions is None:
+            subdivisions = {
+                "I": ["a", "b"],
+                "II": ["a", "b"],
+                "V": ["a", "b"],
+            }
+
         if modalities is None:
             modalities = get_default_modalities()
 
