@@ -20,7 +20,7 @@ def clb_raw() -> pd.DataFrame:
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def usz_2025_df() -> lydata.LyDataFrame:
     """Fixture to load a sample DataFrame from the USZ 2025 dataset."""
     return next(

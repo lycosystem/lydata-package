@@ -22,7 +22,7 @@ from typing import Any, Literal
 
 from loguru import logger
 from pandas import PeriodDtype
-from pydantic import BaseModel, PastDate
+from pydantic import BaseModel, Field, PastDate  # noqa: F401
 
 from lydata.accessor import LyDataAccessor, LyDataFrame  # noqa: F401
 from lydata.schema import create_full_record_model
@@ -108,7 +108,7 @@ def _get_field_annotations(
     ...     bar: int = 3
     >>> class Baz(BaseModel):
     ...     foo: Foo = Field(default_factory=Foo)
-    >>> get_field_annotations(Baz)
+    >>> _get_field_annotations(Baz)
     {'foo': {'bar': <class 'int'>}}
     """
     annotations = {}

@@ -399,6 +399,11 @@ class LyDataAccessor:
         3   False
         4    None
         """
+        # We need the ability to pass the subdivisions for the `.enhance` method,
+        # but normally, we don't want to augment when combining.
+        if subdivisions is None:
+            subdivisions = {}
+
         modalities = self._filter_modalities(modalities)
         obj_copy = self._obj.copy()
 
