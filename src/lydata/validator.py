@@ -20,8 +20,8 @@ import sys
 from collections.abc import Mapping
 from typing import Any, Literal
 
+import pandas as pd
 from loguru import logger
-from pandas import PeriodDtype
 from pydantic import BaseModel, Field, PastDate  # noqa: F401
 
 from lydata.accessor import LyDataAccessor, LyDataFrame  # noqa: F401
@@ -132,16 +132,20 @@ def _get_default_casters() -> Mapping[type, str]:
         str | None: "string",
         bool: bool,
         bool | None: "boolean",
-        PastDate: PeriodDtype("D"),
-        PastDate | None: PeriodDtype("D"),
+        PastDate: pd.PeriodDtype("D"),
+        PastDate | None: pd.PeriodDtype("D"),
         Literal["male", "female"]: "string",
         Literal["c", "p"]: "string",
+        Literal["a", "b"] | None: "string",
+        Literal["a", "b", "c"] | None: "string",
+        Literal["left", "right"] | None: "string",
     }
 
 
 def cast_dtypes(
     dataset: LyDataFrame,
     casters: Mapping[type, str] | None = None,
+    fail_on_error: bool = True,
 ) -> LyDataFrame:
     """Cast the dtypes of the ``dataset`` to the expected types.
 
@@ -154,6 +158,8 @@ def cast_dtypes(
     pydantic that a field can be an integer or None. If you want to use a different
     mapping, you can pass it as the ``casters`` argument.
     """
+    dataset = dataset.convert_dtypes()
+
     if casters is None:
         casters = _get_default_casters()
 
@@ -161,24 +167,37 @@ def cast_dtypes(
     FullRecord = create_full_record_model(modalities)  # noqa: N806
     annotations = _get_field_annotations(FullRecord)
     annotations = flatten(annotations, max_depth=3)
-    dtypes = {}
 
     for col in dataset.columns:
         annotation = annotations.get(col, None)
-        fallback = dataset[col].dtype
+        old_type = dataset[col].dtype
+        new_type = casters.get(annotation, old_type)
 
         if annotation is None:
             logger.warning(
-                f"No annotation found for column '{col}'. "
-                f"Using dtype {fallback} instead."
+                f"No annotation found for column '{col}'. Using {old_type=} instead. "
             )
             continue
 
-        dtypes[col] = casters.get(annotation, fallback)
+        if new_type == old_type:
+            logger.debug(
+                f"Column {col=} already has the expected type {old_type=}. Skipping."
+            )
+            continue
 
-    result = dataset.astype(dtypes)
-    logger.success(f"Cast types: {result.dtypes.to_dict()}")
-    return result
+        try:
+            dataset = dataset.astype({col: new_type})
+            logger.success(f"Cast {col=} from {old_type=} to {new_type=}.")
+        except TypeError as e:
+            msg = (
+                f"Failed to cast column {col=} with ({annotation=}) to "
+                f"caster = `{new_type}."
+            )
+            logger.error(msg)
+            if fail_on_error:
+                raise TypeError(msg) from e
+
+    return dataset
 
 
 if __name__ == "__main__":
