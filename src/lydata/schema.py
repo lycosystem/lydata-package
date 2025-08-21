@@ -21,6 +21,7 @@ from pydantic import (
     RootModel,
     create_model,
     field_validator,
+    model_validator,
 )
 
 from lydata.utils import get_default_modalities
@@ -89,10 +90,21 @@ class PatientCore(BaseModel):
         default=8,
         description="Edition of the TNM classification used for staging.",
     )
-    n_stage: int | None = Field(
-        ge=0,
+    n_stage_prefix: Literal["c", "p"] | None = Field(
+        default=None,
+        description=(
+            "Prefix for the N stage, 'c' = clinical, 'p' = pathological. "
+            "This is used to distinguish between clinical and pathological staging."
+        ),
+    )
+    n_stage: int = Field(
+        ge=-1,
         le=3,
-        description="N stage of the patient according to the TNM classification.",
+        description=(
+            "N stage of the patient according to the TNM classification. The value -1 "
+            "is reserved for the NX stage, which means that the lymph nodes could not "
+            "be assessed for involvement."
+        ),
     )
     n_stage_suffix: Literal["a", "b", "c"] | None = Field(
         default=None,
@@ -112,7 +124,15 @@ class PatientCore(BaseModel):
         description="Weight of the patient in kg at the time of diagnosis.",
     )
 
-    @field_validator("pack_years", "hpv_status", "m_stage", mode="before")
+    @field_validator(
+        "pack_years",
+        "hpv_status",
+        "n_stage_prefix",
+        "n_stage_suffix",
+        "m_stage",
+        "weight",
+        mode="before",
+    )
     @classmethod
     def nan_to_none(cls, value: Any) -> Any:
         """Convert NaN values to None."""
@@ -164,20 +184,24 @@ class TumorCore(BaseModel):
         ge=0,
         description="Estimated volume of the tumor in cm³.",
     )
-    stage_prefix: Literal["c", "p"] = Field(
+    t_stage_prefix: Literal["c", "p"] = Field(
         default="c",
         description="Prefix for the tumor stage, 'c' = clinical, 'p' = pathological.",
     )
     t_stage: int = Field(
-        ge=1,
+        ge=-1,
         le=4,
-        description="T stage of the tumor according to the TNM classification.",
+        description=(
+            "T stage of the tumor according to the TNM classification. -1 is reserved "
+            "for the TX stage, meaning the presence of tumor could not be assessed."
+        ),
     )
-    t_stage_suffix: Literal["a", "b"] | None = Field(
+    t_stage_suffix: Literal["is", "a", "b"] | None = Field(
         default=None,
         description=(
             "Suffix for the T-stage according to the TNM classification. "
-            "Can be 'a', 'b', or 'c'."
+            "Can be 'a' or 'b'. The value 'is' is reserved for the Tis stage, in which "
+            "case the `t_stage` should be 0."
         ),
     )
     side: Literal["left", "right"] | None = Field(
@@ -185,11 +209,42 @@ class TumorCore(BaseModel):
         description="Side of the neck where the main tumor mass is located.",
     )
 
-    @field_validator("central", "volume", mode="before")
+    @field_validator(
+        "central",
+        "extension",
+        "dist_to_midline",
+        "volume",
+        "t_stage_suffix",
+        "side",
+        mode="before",
+    )
     @classmethod
     def nan_to_none(cls, value: Any) -> Any:
         """Convert NaN values to None."""
         return None if pd.isna(value) else value
+
+    @model_validator(mode="after")
+    def check_t_stage(self) -> TumorCore:
+        """Ensure T-category is valid."""
+        if self.t_stage == -1 and self.t_stage_suffix is not None:
+            raise ValueError(
+                f"{self.t_stage_suffix=}, but should be `None`, since "
+                f"{self.t_stage=}, indicating TX stage.",
+            )
+
+        if self.t_stage_suffix == "is" and self.t_stage != 0:
+            raise ValueError(
+                f"T-stage 'Tis' is indicated by t_stage=0 and t_stage_suffix='is'. "
+                f"But got {self.t_stage=} and {self.t_stage_suffix=}.",
+            )
+
+        if self.t_stage_suffix in ["a", "b"] and self.t_stage not in [1, 2, 3, 4]:
+            raise ValueError(
+                f"T-stage suffix {self.t_stage_suffix=} is only valid for T-stages "
+                f"1, 2, 3, or 4, but got {self.t_stage=}.",
+            )
+
+        return self
 
 
 class TumorRecord(BaseModel):
