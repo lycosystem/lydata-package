@@ -20,9 +20,8 @@ import sys
 from collections.abc import Mapping
 from typing import Any, Literal
 
-import pandas as pd
 from loguru import logger
-from pydantic import BaseModel, Field, PastDate  # noqa: F401
+from pydantic import BaseModel, Field, PastDate, ValidationError  # noqa: F401
 
 from lydata.accessor import LyDataAccessor, LyDataFrame  # noqa: F401
 from lydata.schema import create_full_record_model
@@ -80,23 +79,30 @@ def unflatten(flat: dict) -> dict:
     return result
 
 
-def validate(dataset: LyDataFrame) -> bool:
-    """Validate the given dataset against the lyDATA schema."""
+def is_valid(dataset: LyDataFrame, fail_on_error: bool = True) -> bool:
+    """Validate the given dataset against the lyDATA schema.
+
+    Returns ``True`` if all records are valid, otherwise it either raises an error
+    (if ``fail_on_error`` is ``True``) or returns ``False``.
+    """
     modalities = dataset.ly.get_modalities()
     FullRecord = create_full_record_model(modalities)  # noqa: N806
+    result = True
 
-    for i, row in dataset.iterrows():
+    for _i, row in dataset.iterrows():
+        patient_id = row.patient.core.id
         record = unflatten(row.to_dict())
-        patient_id = record["patient"]["core"]["id"]
 
-        # move_value(record["patient"], from_key="#", to_key="core")
-        # move_value(record["tumor"], from_key="1", to_key="core")
+        try:
+            _validated_record = FullRecord(**record)
+            logger.debug(f"Successful validation of {patient_id=}")
+        except ValidationError as e:
+            if fail_on_error:
+                raise ValueError(f"Validation error for {patient_id=}") from e
+            logger.exception(e)
+            result = False
 
-        with logger.catch(message=f"Validation error for {patient_id=}"):
-            validated_record = FullRecord(**record)
-            logger.debug(f"Patient {i} is valid: {validated_record}")
-
-    return True
+    return result
 
 
 def _get_field_annotations(
@@ -132,8 +138,8 @@ def _get_default_casters() -> Mapping[type, str]:
         str | None: "string",
         bool: bool,
         bool | None: "boolean",
-        PastDate: pd.PeriodDtype("D"),
-        PastDate | None: pd.PeriodDtype("D"),
+        PastDate: "datetime64[ns]",
+        PastDate | None: "datetime64[ns]",
         Literal["male", "female"]: "string",
         Literal["c", "p"]: "string",
         Literal["a", "b"] | None: "string",
@@ -174,15 +180,11 @@ def cast_dtypes(
         new_type = casters.get(annotation, old_type)
 
         if annotation is None:
-            logger.warning(
-                f"No annotation found for column '{col}'. Using {old_type=} instead. "
-            )
+            logger.warning(f"No annotation found for {col=}. Using {old_type=}.")
             continue
 
         if new_type == old_type:
-            logger.debug(
-                f"Column {col=} already has the expected type {old_type=}. Skipping."
-            )
+            logger.debug(f"Column {col=} already has expected {old_type=}. Skipping.")
             continue
 
         try:
@@ -209,8 +211,8 @@ if __name__ == "__main__":
     dataset = next(
         loader.load_datasets(
             repo_name="lycosystem/lydata.private",
-            ref="6c56a630f307ffea12a2f071f18316f605beaa08",
+            ref="e68141fd5440d4cfa6491df14ca2203ddb7946b0",
         )
     )
     dataset = cast_dtypes(dataset)
-    validate(dataset)
+    print(f"{is_valid(dataset, fail_on_error=False)=}")  # noqa: T201
