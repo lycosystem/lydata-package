@@ -21,7 +21,6 @@ from pydantic import (
     RootModel,
     create_model,
     field_validator,
-    model_validator,
 )
 
 from lydata.utils import get_default_modalities
@@ -63,8 +62,12 @@ class PatientCore(BaseModel):
         description="Age of the patient at the time of diagnosis in years.",
     )
     diagnose_date: PastDate = Field(description="Date of diagnosis of the patient.")
-    alcohol_abuse: bool = Field(description="Whether the patient abused alcohol.")
-    nicotine_abuse: bool = Field(description="Whether the patient abused nicotine.")
+    alcohol_abuse: bool = Field(
+        description="Whether the patient currently abuses alcohol."
+    )
+    nicotine_abuse: bool = Field(
+        description="Whether the patient currently abuses nicotine."
+    )
     pack_years: float | None = Field(
         default=None,
         ge=0,
@@ -74,7 +77,12 @@ class PatientCore(BaseModel):
         default=None,
         description="Whether the patient was infected with HPV.",
     )
-    neck_dissection: bool = Field(description="Did the patient have a neck dissection?")
+    neck_dissection: bool = Field(
+        description=(
+            "Whether the patient underwent neck dissection surgery as part of "
+            "their treatment."
+        ),
+    )
     tnm_edition: int = Field(
         ge=6,
         le=8,
@@ -86,10 +94,22 @@ class PatientCore(BaseModel):
         le=3,
         description="N stage of the patient according to the TNM classification.",
     )
+    n_stage_suffix: Literal["a", "b", "c"] | None = Field(
+        default=None,
+        description=(
+            "Suffix for the N-stage according to the TNM classification. "
+            "Can be 'a', 'b', or 'c'."
+        ),
+    )
     m_stage: int | None = Field(
         ge=0,
         le=1,
         description="M stage of the patient according to the TNM classification.",
+    )
+    weight: float | None = Field(
+        default=None,
+        ge=0,
+        description="Weight of the patient in kg at the time of diagnosis.",
     )
 
     @field_validator("pack_years", "hpv_status", "m_stage", mode="before")
@@ -97,16 +117,6 @@ class PatientCore(BaseModel):
     def nan_to_none(cls, value: Any) -> Any:
         """Convert NaN values to None."""
         return None if pd.isna(value) else value
-
-    @model_validator(mode="after")
-    def check_nicotine_and_pack_years(self) -> PatientCore:
-        """Ensure that if nicotine abuse is False, pack_years is not > 0."""
-        if not self.nicotine_abuse and (
-            self.pack_years is not None and self.pack_years > 0
-        ):
-            raise ValueError("If nicotine abuse is False, pack_years cannot be > 0.")
-
-        return self
 
 
 class PatientRecord(BaseModel):
@@ -144,6 +154,11 @@ class TumorCore(BaseModel):
         description="Whether the tumor extends over the mid-sagittal line.",
         default=False,
     )
+    dist_to_midline: float | None = Field(
+        default=None,
+        ge=0,
+        description="Distance of the tumor to the mid-sagittal line in mm.",
+    )
     volume: float | None = Field(
         default=None,
         ge=0,
@@ -153,10 +168,21 @@ class TumorCore(BaseModel):
         default="c",
         description="Prefix for the tumor stage, 'c' = clinical, 'p' = pathological.",
     )
-    t_stage: int | None = Field(
-        ge=0,
+    t_stage: int = Field(
+        ge=1,
         le=4,
         description="T stage of the tumor according to the TNM classification.",
+    )
+    t_stage_suffix: Literal["a", "b"] | None = Field(
+        default=None,
+        description=(
+            "Suffix for the T-stage according to the TNM classification. "
+            "Can be 'a', 'b', or 'c'."
+        ),
+    )
+    side: Literal["left", "right"] | None = Field(
+        default=None,
+        description="Side of the neck where the main tumor mass is located.",
     )
 
     @field_validator("central", "volume", mode="before")
@@ -271,12 +297,12 @@ class BaseRecord(BaseModel):
 
 def create_full_record_model(
     modalities: list[str],
-    title: str = "FullRecord",
+    model_name: str = "FullRecord",
     **kwargs: dict[str, Any],
 ) -> type:
-    """Create a Pydantic model for a full record with all modalities."""
+    """Create a Pydantic model for a full record with all ``modalities``."""
     return create_model(
-        title,
+        model_name,
         __base__=BaseRecord,
         **{mod: create_modality_field(mod) for mod in modalities},
         **kwargs,
@@ -290,7 +316,7 @@ def _write_schema_to_file(
     """Write the Pydantic schema to a file."""
     if schema is None:
         modalities = get_default_modalities()
-        schema = create_full_record_model(modalities, title="Record")
+        schema = create_full_record_model(modalities, model_name="Record")
 
     root_schema = RootModel[list[schema]]
 
