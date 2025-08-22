@@ -42,7 +42,7 @@ def tumor_core_dict() -> dict[str, Any]:
         "subsite": "C03.9",
         "central": False,
         "extension": True,
-        "stage_prefix": "c",
+        "t_stage_prefix": "c",
         "t_stage": 2,
     }
 

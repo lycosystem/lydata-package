@@ -26,26 +26,26 @@ def test_clb_patient_17(clb_raw: pd.DataFrame) -> None:
     assert clb_aug.iloc[16].ipsi.Ib == False
 
 
-def test_clb_patient_p011(clb_raw: pd.DataFrame) -> None:
+def test_2021_clb_001(clb_raw: pd.DataFrame) -> None:
     """Check that this patient's `NaN` values are handled correctly.
 
     In this patient, the sublvls are missing, therefore the superlvls should not be
     overridden by the augmentor.
     """
-    idx = clb_raw.ly.id == "P011"
+    idx = clb_raw.ly.id == "2021-CLB-001"
     patient = clb_raw.loc[idx]
     enhanced = patient.ly.enhance()
     assert enhanced.iloc[0].pathology.ipsi.II == patient.iloc[0].pathology.ipsi.II
 
 
-def test_clb_patient_p035(clb_raw: pd.DataFrame) -> None:
+def test_2021_clb_017(clb_raw: pd.DataFrame) -> None:
     """Check that this patient's `NaN` values are handled correctly.
 
     In this patient, pathology reports ipsi.Ib as healthy, while diagnostic consensus
     reports ipsi.Ib as involved. This should correctly be combined to ipsi.Ib = False
     and the superlvl should also be set to False.
     """
-    idx = clb_raw.ly.id == "P035"
+    idx = clb_raw.ly.id == "2021-CLB-017"
     patient = clb_raw.loc[idx]
     enhanced = patient.ly.enhance()
     assert len(patient) == len(enhanced) == 1, "Patient data length mismatch"
@@ -53,29 +53,20 @@ def test_clb_patient_p035(clb_raw: pd.DataFrame) -> None:
     assert enhanced.iloc[0].max_llh.ipsi.Ib == False
 
 
-def test_usz_patient_9() -> None:
+def test_2021_usz_009(usz_2021_df: pd.DataFrame) -> None:
     """Check the advanced combination and augmentation of diagnoses and levels."""
-    usz_raw = next(
-        lydata.load_datasets(
-            year=2021,
-            institution="usz",
-            subsite="oropharynx",
-            use_github=True,
-            ref="4668ff6006764169411d6d198c126b020a7892b2",
-        ),
-    )
     modalities = get_default_modalities()
     modalities = {
         name: mod
         for name, mod in modalities.items()
-        if name in usz_raw.columns.get_level_values(0)
+        if name in usz_2021_df.columns.get_level_values(0)
     }
     usz_aug = combine_and_augment_levels(
-        diagnoses=[usz_raw[mod] for mod in modalities.keys()],
+        diagnoses=[usz_2021_df[mod] for mod in modalities.keys()],
         specificities=[mod.spec for mod in modalities.values()],
         sensitivities=[mod.sens for mod in modalities.values()],
     )
-    assert len(usz_aug) == len(usz_raw), "Augmented data length mismatch"
+    assert len(usz_aug) == len(usz_2021_df), "Augmented data length mismatch"
     assert usz_aug.iloc[8].ipsi.III == False
 
 
@@ -94,7 +85,7 @@ def test_2025_usz_312(usz_2025_df: lydata.LyDataFrame) -> None:
     idx = usz_2025_df.ly.id == "2025-USZ-312"
     patient = usz_2025_df.loc[idx]
     assert len(patient) == 1
-    assert patient.ly.date.iloc[0] == "2013-06-03"
+    assert patient.ly.date.iloc[0].strftime("%Y-%m-%d") == "2013-06-03"
 
     enhanced = patient.ly.enhance()
     assert len(enhanced) == 1
@@ -111,7 +102,7 @@ def test_2025_usz_075(usz_2025_df: lydata.LyDataFrame) -> None:
     idx = usz_2025_df.ly.id == "2025-USZ-075"
     patient = usz_2025_df.loc[idx]
     assert len(patient) == 1
-    assert patient.ly.date.iloc[0] == "2015-11-23"
+    assert patient.ly.date.iloc[0].strftime("%Y-%m-%d") == "2015-11-23"
     assert patient.FNA.contra.II.iloc[0] == True
 
     enhanced = patient.ly.enhance(
