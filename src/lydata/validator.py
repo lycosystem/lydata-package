@@ -1,19 +1,12 @@
-"""Module to transform to and validate the CSV schema of the lydata datasets.
+"""Module to cast dtypes and to and validate the lyDATA datasets.
 
-Here we define the function :py:func:`construct_schema` to dynamically create a
-:py:class:`pandera.DataFrameSchema` that we can use to validate that a given
-:py:class:`~pandas.DataFrame` conforms to the minimum requirements of the lyDATA
-datasets.
+The two main functions here are :py:func:`cast_dtypes` and :py:func:`is_valid`. The
+first one can be used to cast the dtypes of the columns in a :py:class:`LyDataFrame`
+to the expected types according to the schema constructed using
+:py:func:`create_full_record_model`.
 
-Currently, we only publish the :py:func:`validate_datasets` function that validates all
-datasets that are found by the function :py:func:`~lydata.loader.available_datasets`.
-In the future, we may want to make this more flexible.
-
-In this module, we also provide the :py:func:`transform_to_lyprox` function that can be
-used to transform any raw data into the format that can be uploaded to the `LyProX`_
-platform database.
-
-.. _LyProX: https://lyprox.org
+Subsequently, :py:func:`is_valid` can be used to validate every row in the table, again
+using the constructed schema.
 """
 
 import sys
@@ -130,13 +123,13 @@ def _get_field_annotations(
 def _get_default_casters() -> Mapping[type, str]:
     """Get the default dtype casters for the lyDATA schema."""
     return {
-        int: int,
+        int: "Int64",
         int | None: "Int64",
-        float: float,
+        float: "Float64",
         float | None: "Float64",
         str: "string",
         str | None: "string",
-        bool: bool,
+        bool: "boolean",
         bool | None: "boolean",
         PastDate: "datetime64[ns]",
         PastDate | None: "datetime64[ns]",

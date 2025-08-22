@@ -1,7 +1,11 @@
 """Pydantic schema to define a single patient record.
 
-Based on such a schema, pandera can create a DataFrameSchema to validate lyDATA sets.
-Also, it may be used to create a HTML form to enter patient data.
+This schema is useful for casting dtypes, as done in :py:func:`validator.cast_dtypes`,
+validation via :py:func:`validator.is_valid`, and for exporting a JSON schema that
+may be used for all kinds of purposes, e.g. to automatically generate HTML forms using
+a `JSON-Editor`_.
+
+.. _JSON-Editor: https://json-editor.github.io/json-editor/
 """
 
 from __future__ import annotations
@@ -54,15 +58,25 @@ class PatientCore(BaseModel):
     etc.
     """
 
-    id: str = Field(description="Unique but anonymized identifier for a patient.")
-    institution: str = Field(description="Hospital where the patient was treated.")
+    id: str = Field(
+        description=(
+            "Unique but anonymized identifier for a patient. We commonly use the "
+            "format `YYYY-<abr.>-<num>`, where `<abr.>` is an abbreviation of the "
+            "institution (hospital) where the patient was treated."
+        )
+    )
+    institution: str = Field(
+        description="Name of the institution/hospital where the patient was treated."
+    )
     sex: Literal["male", "female"] = Field(description="Biological sex of the patient.")
     age: int = Field(
         ge=0,
         le=120,
         description="Age of the patient at the time of diagnosis in years.",
     )
-    diagnose_date: PastDate = Field(description="Date of diagnosis of the patient.")
+    diagnose_date: PastDate = Field(
+        description="Date of diagnosis of the patient (format YYYY-MM-DD)."
+    )
     alcohol_abuse: bool = Field(
         description="Whether the patient currently abuses alcohol."
     )
@@ -80,8 +94,7 @@ class PatientCore(BaseModel):
     )
     neck_dissection: bool = Field(
         description=(
-            "Whether the patient underwent neck dissection surgery as part of "
-            "their treatment."
+            "Whether the patient underwent neck dissection as part of their treatment."
         ),
     )
     tnm_edition: int = Field(
@@ -145,6 +158,9 @@ class PatientRecord(BaseModel):
     Because the final dataset has a three-level header, this record holds only the
     key ``core`` under which we store the actual patient information defined in the
     :py:class:`PatientCore` model.
+
+    Alongside ``core``, this may at some point hold additional or optional information
+    about the patient.
     """
 
     core: PatientCore = Field(
@@ -250,8 +266,8 @@ class TumorCore(BaseModel):
 class TumorRecord(BaseModel):
     """A tumor record of a patient.
 
-    As with the patient record, this holds only the key ``core`` under which we
-    store the actual tumor information defined in the :py:class:`TumorCore` model.
+    As with the :py:class:`PatientRecord`, this holds only the key ``core`` under which
+    we store the actual tumor information defined in the :py:class:`TumorCore` model.
     """
 
     core: TumorCore = Field(
