@@ -86,10 +86,10 @@ class PatientCore(BaseModel):
     diagnose_date: Annotated[PastDate, BeforeValidator(convert_nat)] = Field(
         description="Date of diagnosis of the patient (format YYYY-MM-DD)."
     )
-    alcohol_abuse: bool = Field(
+    alcohol_abuse: bool | None = Field(
         description="Whether the patient currently abuses alcohol."
     )
-    nicotine_abuse: bool = Field(
+    nicotine_abuse: bool | None = Field(
         description="Whether the patient currently abuses nicotine."
     )
     pack_years: float | None = Field(
@@ -101,7 +101,7 @@ class PatientCore(BaseModel):
         default=None,
         description="Whether the patient was infected with HPV.",
     )
-    neck_dissection: bool = Field(
+    neck_dissection: bool | None = Field(
         description=(
             "Whether the patient underwent neck dissection as part of their treatment."
         ),
@@ -151,10 +151,13 @@ class PatientCore(BaseModel):
     )
 
     @field_validator(
+        "alcohol_abuse",
+        "nicotine_abuse",
         "pack_years",
         "hpv_status",
         "n_stage_prefix",
         "n_stage_suffix",
+        "neck_dissection",
         "m_stage",
         "weight",
         mode="before",
