@@ -1,7 +1,7 @@
 """Pydantic schema to define a single patient record.
 
 This schema is useful for casting dtypes, as done in :py:func:`validator.cast_dtypes`,
-validation via :py:func:`validator.is_valid`, and for exporting a JSON schema that
+validation via :py:func:`~validator.is_valid`, and for exporting a JSON schema that
 may be used for all kinds of purposes, e.g. to automatically generate HTML forms using
 a `JSON-Editor`_.
 
@@ -165,7 +165,7 @@ class PatientCore(BaseModel):
     )
     @classmethod
     def nan_to_none(cls, value: Any) -> Any:
-        """Convert NaN values to None."""
+        """Convert NaN values to None to avoid pydantic errors."""
         return None if pd.isna(value) else value
 
     @field_validator(
@@ -176,7 +176,7 @@ class PatientCore(BaseModel):
     )
     @classmethod
     def to_lower(cls, value: Any) -> Any:
-        """Convert string values to lower case."""
+        """Convert some string fields to lower case before validation."""
         if isinstance(value, str):
             return value.lower()
 

@@ -11,7 +11,7 @@ the above mentioned functionality. That way, accessing the age of all patients i
 as easy as typing ``df.ly.age``.
 
 Beyond that, we implement methods like :py:meth:`~LyDataAccessor.query` for filtering
-the DataFrame using reusable query objects (see the :py:module:`lydata.querier` module
+the DataFrame using reusable query objects (see the :py:mod:`lydata.querier` module
 for more information), :py:meth:`~LyDataAccessor.stats` for computing common statistics
 that we use in our `LyProX`_ web app, and :py:meth:`~LyDataAccessor.combine` for
 combining diagnoses from different modalities into a single column.
