@@ -92,7 +92,7 @@ def is_valid(dataset: LyDataFrame, fail_on_error: bool = True) -> bool:
         except ValidationError as e:
             if fail_on_error:
                 raise ValueError(f"Validation error for {patient_id=}") from e
-            logger.exception(e)
+            logger.error(f"{patient_id}: {e}")
             result = False
 
     return result
