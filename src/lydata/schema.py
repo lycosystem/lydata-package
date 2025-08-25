@@ -229,7 +229,7 @@ class TumorCore(BaseModel):
             "case the `t_stage` should be 0."
         ),
     )
-    side: Literal["left", "right"] | None = Field(
+    side: Literal["left", "right", "central"] | None = Field(
         default=None,
         description="Side of the neck where the main tumor mass is located.",
     )
@@ -247,6 +247,14 @@ class TumorCore(BaseModel):
     def nan_to_none(cls, value: Any) -> Any:
         """Convert NaN values to None."""
         return None if pd.isna(value) else value
+
+    @model_validator(mode="after")
+    def check_tumor_side(self) -> TumorCore:
+        """Ensure tumor side information is consistent with ``central``."""
+        if not (self.central == (self.side == "central")):
+            raise ValueError(f"{self.central=}, but {self.side=}.")
+
+        return self
 
     @model_validator(mode="after")
     def check_t_stage(self) -> TumorCore:

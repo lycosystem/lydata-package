@@ -27,3 +27,4 @@ __all__ = [
 ]
 
 logger.disable("lydata")
+logger.remove()
