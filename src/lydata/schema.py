@@ -136,6 +136,7 @@ class PatientCore(BaseModel):
         ),
     )
     m_stage: int | None = Field(
+        default=None,
         ge=-1,
         le=1,
         description=(
@@ -258,6 +259,9 @@ class TumorCore(BaseModel):
     @model_validator(mode="after")
     def check_tumor_side(self) -> TumorCore:
         """Ensure tumor side information is consistent with ``central``."""
+        if self.central is None and self.side is None:
+            return self
+
         if not (self.central == (self.side == "central")):
             raise ValueError(f"{self.central=}, but {self.side=}.")
 
