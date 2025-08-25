@@ -136,9 +136,13 @@ class PatientCore(BaseModel):
         ),
     )
     m_stage: int | None = Field(
-        ge=0,
+        ge=-1,
         le=1,
-        description="M stage of the patient according to the TNM classification.",
+        description=(
+            "M stage of the patient according to the TNM classification. The value -1 "
+            "is reserved for the MX stage, which technically doesn't exist, but it is "
+            "commonly used."
+        ),
     )
     weight: float | None = Field(
         default=None,
