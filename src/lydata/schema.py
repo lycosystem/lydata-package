@@ -168,6 +168,20 @@ class PatientCore(BaseModel):
         """Convert NaN values to None."""
         return None if pd.isna(value) else value
 
+    @field_validator(
+        "sex",
+        "n_stage_prefix",
+        "n_stage_suffix",
+        mode="before",
+    )
+    @classmethod
+    def to_lower(cls, value: Any) -> Any:
+        """Convert string values to lower case."""
+        if isinstance(value, str):
+            return value.lower()
+
+        return value
+
 
 class PatientRecord(BaseModel):
     """A patient's record.
@@ -255,6 +269,21 @@ class TumorCore(BaseModel):
     def nan_to_none(cls, value: Any) -> Any:
         """Convert NaN values to None."""
         return None if pd.isna(value) else value
+
+    @field_validator(
+        "location",
+        "t_stage_prefix",
+        "t_stage_suffix",
+        "side",
+        mode="before",
+    )
+    @classmethod
+    def to_lower(cls, value: Any) -> Any:
+        """Convert string values to lower case."""
+        if isinstance(value, str):
+            return value.lower()
+
+        return value
 
     @model_validator(mode="after")
     def check_tumor_side(self) -> TumorCore:
