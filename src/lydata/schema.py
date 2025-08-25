@@ -50,6 +50,15 @@ _LNLS = [
 ]
 
 
+def convert_nat(value: Any) -> Any:
+    """Convert pandas NaT to None.
+
+    pydantic throws an unspecific ``TypeError`` when ``pd.NaT`` is passed to a field.
+    See [this issue on Github](https://github.com/pydantic/pydantic/issues/8039).
+    """
+    return None if pd.isna(value) else value
+
+
 class PatientCore(BaseModel):
     """Basic required patient information.
 
@@ -74,7 +83,7 @@ class PatientCore(BaseModel):
         le=120,
         description="Age of the patient at the time of diagnosis in years.",
     )
-    diagnose_date: PastDate = Field(
+    diagnose_date: Annotated[PastDate, BeforeValidator(convert_nat)] = Field(
         description="Date of diagnosis of the patient (format YYYY-MM-DD)."
     )
     alcohol_abuse: bool = Field(
@@ -288,7 +297,7 @@ def create_lnl_field(lnl: str) -> tuple[type, Field]:
 class ModalityCore(BaseModel):
     """Basic info about a diagnostic/pathological modality."""
 
-    date: PastDate | None = Field(
+    date: Annotated[PastDate | None, BeforeValidator(convert_nat)] = Field(
         description="Date of the diagnostic or pathological modality.",
         default=None,
     )
