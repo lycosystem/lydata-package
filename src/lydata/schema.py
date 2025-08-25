@@ -259,10 +259,7 @@ class TumorCore(BaseModel):
     @model_validator(mode="after")
     def check_tumor_side(self) -> TumorCore:
         """Ensure tumor side information is consistent with ``central``."""
-        if self.central is None and self.side is None:
-            return self
-
-        if not (self.central == (self.side == "central")):
+        if self.side == "central" and not self.central:
             raise ValueError(f"{self.central=}, but {self.side=}.")
 
         return self
