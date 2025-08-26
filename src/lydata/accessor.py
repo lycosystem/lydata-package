@@ -228,6 +228,42 @@ class LyDataAccessor:
 
         return modalities
 
+    def get_tnm(self) -> pd.DataFrame:
+        """Return the T, N, and M stage with all pre- and suffixes.
+
+        This info will be collected in three separate column `"T"`, `"N"`, and `"M"`.
+
+        >>> df = pd.DataFrame({
+        ...     ('tumor', 'core', 't_stage_prefix'):   ['c', 'p'],
+        ...     ('tumor', 'core', 't_stage'):          [2  ,  3 ],
+        ...     ('tumor', 'core', 't_stage_suffix'):   ['a', 'b'],
+        ...     ('patient', 'core', 'n_stage'):        [1  ,  2 ],
+        ...     ('patient', 'core', 'n_stage_suffix'): ['a', 'b'],
+        ...     ('patient', 'core', 'm_stage'):        [0  ,  1 ],
+        ... })
+        >>> df.ly.get_tnm()   # doctest: +NORMALIZE_WHITESPACE
+           T    N   M
+        0  c2a  1a  0
+        1  p3b  2b  1
+        """
+        empty = pd.Series([""] * len(self._obj), index=self._obj.index)
+        result = pd.DataFrame(index=self._obj.index)
+
+        for stage in ("t", "n", "m"):
+            tmp = pd.DataFrame(index=self._obj.index)
+            for part in ["prefix", "", "suffix"]:
+                name = "_".join([stage, "stage", part]).strip("_")
+                try:
+                    col = self._obj.xs(name, axis="columns", level=2).iloc[:, 0]
+                except KeyError:
+                    col = empty.copy()
+
+                tmp = pd.concat([tmp, col], axis="columns")
+
+            result[stage.upper()] = tmp.astype(str).agg("".join, axis="columns")
+
+        return result
+
     def _get_mask(self, query: CanExecute | None = None) -> pd.Series:
         """Safely get a boolean mask for the DataFrame based on the query."""
         if query is None:
@@ -535,3 +571,9 @@ class LyDataFrame(pd.DataFrame):
 
     ly: LyDataAccessor
     """The custom lydata accessor for these DataFrame subclass instances."""
+
+
+if __name__ == "__main__":
+    import doctest
+
+    doctest.testmod()
