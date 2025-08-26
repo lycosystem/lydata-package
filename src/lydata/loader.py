@@ -25,8 +25,9 @@ from pathlib import Path
 
 import numpy as np  # noqa: F401
 import pandas as pd
-from github import Github, Repository
+from github import BadCredentialsException, Github, Repository, UnknownObjectException
 from github.ContentFile import ContentFile
+from github.GithubException import GithubException
 from loguru import logger
 from pydantic import BaseModel, Field, PrivateAttr, constr
 
@@ -198,6 +199,34 @@ def _available_datasets_on_disk(
                 )
 
 
+def _safely_fetch_repo(gh: Github, repo_name: str) -> Repository:
+    """Fetch a GitHub repository, handling common errors."""
+    try:
+        repo = gh.get_repo(repo_name)
+    except UnknownObjectException as e:
+        raise ValueError(f"Could not find repository '{repo_name}' on GitHub.") from e
+    except BadCredentialsException as e:
+        raise ValueError("Invalid GitHub credentials.") from e
+
+    return repo
+
+
+def _safely_fetch_contents(repo: Repository, ref: str) -> list[ContentFile]:
+    """Fetch contents of a GitHub ``repo`` at a specific ``ref``, handling errors."""
+    try:
+        contents = repo.get_contents(path="", ref=ref)
+    except GithubException as e:
+        available_branches = [b.name for b in repo.get_branches()]
+        available_tags = [t.name for t in repo.get_tags()]
+        raise ValueError(
+            f"Could not find ref '{ref}' in repository '{repo.full_name}'.\n"
+            f"Available branches: {available_branches}.\n"
+            f"Available tags: {available_tags}."
+        ) from e
+
+    return contents
+
+
 def _available_datasets_on_github(
     year: int | str = "*",
     institution: str = "*",
@@ -205,10 +234,10 @@ def _available_datasets_on_github(
     repo_name: str = _default_repo_name,
     ref: str = "main",
 ) -> Generator[LyDataset, None, None]:
+    """Generate :py:class:`.LyDataset` instances of available datasets on GitHub."""
     gh = Github(auth=get_github_auth())
-
-    repo = gh.get_repo(repo_name)
-    contents = repo.get_contents(path="", ref=ref)
+    repo = _safely_fetch_repo(gh=gh, repo_name=repo_name)
+    contents = _safely_fetch_contents(repo=repo, ref=ref)
 
     matches = []
     for content in contents:
@@ -216,6 +245,12 @@ def _available_datasets_on_github(
             content.name, f"{year}-{institution}-{subsite}"
         ):
             matches.append(content)
+
+    if len(matches) == 0:
+        raise ValueError(
+            f"No datasets found in repository '{repo_name}' matching "
+            f"'{year}-{institution}-{subsite}' at ref '{ref}'."
+        )
 
     for match in matches:
         year, institution, subsite = match.name.split("-", maxsplit=2)
@@ -337,13 +372,6 @@ def load_datasets(
     )
     for dset_conf in dset_confs:
         df: LyDataFrame = dset_conf.get_dataframe(use_github=use_github, **kwargs)
-
-        if cast:
-            df = cast_dtypes(df)
-
+        df = cast_dtypes(df) if cast else df
         _ = validate and is_valid(df, fail_on_error=True)
-
-        if enhance:
-            df = df.ly.enhance()
-
-        yield df
+        yield df.ly.enhance() if enhance else df
