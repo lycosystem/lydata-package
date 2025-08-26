@@ -7,7 +7,7 @@ from lydata.utils import update_and_expand
 
 def test_update_and_expand_using_p035(clb_raw: pd.DataFrame) -> None:
     """Check the `update_and_expand` function with a specific patient."""
-    idx = clb_raw.ly.id == "P035"
+    idx = clb_raw.ly.id == "2021-CLB-017"
     patient = clb_raw.loc[idx]
     combined = patient.ly.combine()
     combined = pd.concat({"test": combined}, axis="columns")

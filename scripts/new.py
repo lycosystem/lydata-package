@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.10"
 # dependencies = [
-#     "lydata @ git+https://github.com/lycosystem/lydata-package@01a62ec12d504365bfd51302526cccc371bfd0ce",
+#     "lydata @ git+https://github.com/lycosystem/lydata-package@66d21299ca5cf6aca1906f7525638b59457aea3e",
 # ]
 # ///
 

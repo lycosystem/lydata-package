@@ -11,7 +11,7 @@ the above mentioned functionality. That way, accessing the age of all patients i
 as easy as typing ``df.ly.age``.
 
 Beyond that, we implement methods like :py:meth:`~LyDataAccessor.query` for filtering
-the DataFrame using reusable query objects (see the :py:module:`lydata.querier` module
+the DataFrame using reusable query objects (see the :py:mod:`lydata.querier` module
 for more information), :py:meth:`~LyDataAccessor.stats` for computing common statistics
 that we use in our `LyProX`_ web app, and :py:meth:`~LyDataAccessor.combine` for
 combining diagnoses from different modalities into a single column.
@@ -360,6 +360,7 @@ class LyDataAccessor:
         self,
         modalities: dict[str, ModalityConfig] | None = None,
         method: Literal["max_llh", "rank"] = "max_llh",
+        subdivisions: Mapping[str, Sequence[str]] | None = None,
     ) -> pd.DataFrame:
         """Combine diagnoses of ``modalities`` using ``method``.
 
@@ -384,6 +385,14 @@ class LyDataAccessor:
         The method :py:func:`.enhance` is a shorthand for combining, augmenting, and
         joining the results in a way similar to that example above.
 
+        .. warning::
+
+            Here, the default value for ``subdivisions`` is set to an empty dictionary.
+            This is because on the one hand, we still want to retain the functionality
+            of combining and augmenting in one step (necessary in the
+            :py:meth:`.enhance` method), but if not explicitly chosen, we keep only
+            the originally provided levels.
+
         >>> df = pd.DataFrame({
         ...     ('CT'       , 'ipsi', 'I'): [False, True , False,  True, None],
         ...     ('MRI'      , 'ipsi', 'I'): [False, True , True ,  None, None],
@@ -398,6 +407,11 @@ class LyDataAccessor:
         3   False
         4    None
         """
+        # We need the ability to pass the subdivisions for the `.enhance` method,
+        # but normally, we don't want to augment when combining.
+        if subdivisions is None:
+            subdivisions = {}
+
         modalities = self._filter_modalities(modalities)
         obj_copy = self._obj.copy()
 
@@ -406,7 +420,7 @@ class LyDataAccessor:
             specificities=[mod.spec for mod in modalities.values()],
             sensitivities=[mod.sens for mod in modalities.values()],
             method=method,
-            subdivisions={},
+            subdivisions=subdivisions,
         )
 
     def augment(
@@ -463,15 +477,29 @@ class LyDataAccessor:
         the :py:meth:`~LyDataAccessor.augment` for every modality in ``modalities``
         and the newly combined ``method`` column.
         """
+        if subdivisions is None:
+            subdivisions = {
+                "I": ["a", "b"],
+                "II": ["a", "b"],
+                "V": ["a", "b"],
+            }
+
         if modalities is None:
             modalities = get_default_modalities()
 
-        combined = self.combine(modalities=modalities, method=method)
+        # Originally, I thought we could just combine and not augment the super- and
+        # sub-levels, but then we discard the involvement probability information from
+        # the original modalities.
+        combined = self.combine(
+            modalities=modalities,
+            method=method,
+            subdivisions=subdivisions,
+        )
         combined = pd.concat({method: combined}, axis="columns")
         combined.index = self._obj.index
         enhanced: LyDataFrame = pd.concat([self._obj, combined], axis="columns")
 
-        for modality in list(modalities.keys()) + [method]:
+        for modality in list(modalities.keys()):
             if modality not in enhanced.columns:
                 continue
 
@@ -484,6 +512,21 @@ class LyDataAccessor:
             enhanced = replace(left=enhanced, right=augmented)
 
         return _sort_all(enhanced)
+
+    def cast(
+        self,
+        casters: Mapping[type, str] | None = None,
+    ) -> LyDataFrame:
+        """Cast the dtypes of the DataFrame to the expected types.
+
+        This uses the annotations of the Pydantic schema to cast the individual columns
+        of the DataFrame to the expected types. It uses the ``casters`` mapping to
+        determine the type to cast to. By default, it uses the mapping from the
+        :py:func:`_get_default_casters` function.
+        """
+        from lydata.validator import cast_dtypes
+
+        return cast_dtypes(self._obj, casters=casters)
 
 
 # Using the class below instead of pd.DataFrame enables IDE type hints.
