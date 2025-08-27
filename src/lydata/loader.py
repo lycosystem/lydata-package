@@ -29,7 +29,14 @@ from github import BadCredentialsException, Github, Repository, UnknownObjectExc
 from github.ContentFile import ContentFile
 from github.GithubException import GithubException
 from loguru import logger
-from pydantic import BaseModel, Field, PrivateAttr, constr
+from pydantic import (
+    BaseModel,
+    DirectoryPath,
+    Field,
+    PrivateAttr,
+    RootModel,
+    constr,
+)
 
 from lydata.accessor import LyDataFrame
 from lydata.utils import get_github_auth
@@ -41,6 +48,38 @@ low_min1_str = constr(to_lower=True, min_length=1)
 
 class SkipDiskError(Exception):
     """Raised when the user wants to skip loading from disk."""
+
+
+def _safely_fetch_repo(gh: Github, repo_name: str) -> Repository:
+    """Fetch a GitHub repository, handling common errors."""
+    try:
+        logger.debug(f"Fetching repository '{repo_name}' from GitHub...")
+        repo = gh.get_repo(repo_name)
+    except UnknownObjectException as e:
+        raise ValueError(f"Could not find repository '{repo_name}' on GitHub.") from e
+    except BadCredentialsException as e:
+        raise ValueError("Invalid GitHub credentials.") from e
+
+    logger.debug(f"Fetched repository '{repo.full_name}' from GitHub.")
+    return repo
+
+
+def _safely_fetch_contents(repo: Repository, ref: str) -> list[ContentFile]:
+    """Fetch contents of a GitHub ``repo`` at a specific ``ref``, handling errors."""
+    try:
+        logger.debug(f"Fetching contents of repo '{repo.full_name}' at ref '{ref}'...")
+        contents = repo.get_contents(path="", ref=ref)
+    except GithubException as e:
+        available_branches = [b.name for b in repo.get_branches()]
+        available_tags = [t.name for t in repo.get_tags()]
+        raise ValueError(
+            f"Could not find ref '{ref}' in repository '{repo.full_name}'.\n"
+            f"Available branches: {available_branches}.\n"
+            f"Available tags: {available_tags}."
+        ) from e
+
+    logger.debug(f"Fetched contents of repo '{repo.full_name}' at ref '{ref}'.")
+    return contents
 
 
 class LyDataset(BaseModel):
@@ -57,13 +96,22 @@ class LyDataset(BaseModel):
     subsite: low_min1_str = Field(
         description="Tumor subsite(s) patients in this dataset were diagnosed with.",
     )
-    repo_name: low_min1_str = Field(
+    repo_name: low_min1_str | None = Field(
         default=_default_repo_name,
         description="GitHub `repository/owner`.",
     )
-    ref: low_min1_str = Field(
+    ref: low_min1_str | None = Field(
         default="main",
         description="Branch/tag/commit of the repo.",
+    )
+    local_dataset_dir: DirectoryPath | None = Field(
+        default=None,
+        description=(
+            "Path to directory containing all the dataset subdirectories. So, e.g. if "
+            "`path_on_disk` is `~/datasets` and the dataset is `2023-clb-multisite`, "
+            "then the CSV file is expected to be at "
+            "`~/datasets/2023-clb-multisite/data.csv`."
+        ),
     )
     _content_file: ContentFile | None = PrivateAttr(default=None)
 
@@ -77,11 +125,17 @@ class LyDataset(BaseModel):
         """
         return f"{self.year}-{self.institution}-{self.subsite}"
 
-    @property
-    def path_on_disk(self) -> Path:
-        """Get the path to the dataset."""
-        install_loc = Path(__file__).parent.parent
-        return install_loc / self.name / "data.csv"
+    def get_file_path(self) -> Path:
+        """Get the path to the CSV dataset."""
+        if self.local_dataset_dir is None:
+            self.local_dataset_dir = Path(__file__).parent.parent
+
+        dataset_path = self.local_dataset_dir / self.name / "data.csv"
+        if not dataset_path.exists():
+            raise FileNotFoundError(f"Could not find CSV locally at '{dataset_path}'.")
+
+        logger.info(f"Found dataset {self.name} on disk at '{dataset_path}'.")
+        return dataset_path
 
     def get_repo(
         self,
@@ -108,9 +162,7 @@ class LyDataset(BaseModel):
         """
         auth = get_github_auth(token=token, user=user, password=password)
         gh = Github(auth=auth)
-        repo = gh.get_repo(self.repo_name)
-        logger.info(f"Fetched repository {repo.full_name} from GitHub.")
-        return repo
+        return _safely_fetch_repo(gh=gh, repo_name=self.repo_name)
 
     def get_content_file(
         self,
@@ -138,7 +190,7 @@ class LyDataset(BaseModel):
             return self._content_file
 
         repo = self.get_repo(token=token, user=user, password=password)
-        self._content_file = repo.get_contents(f"{self.name}/data.csv", ref=self.ref)
+        self._content_file = _safely_fetch_contents(repo=repo, ref=self.ref)
         return self._content_file
 
     def get_dataframe(
@@ -171,7 +223,7 @@ class LyDataset(BaseModel):
                 token=token, user=user, password=password
             ).download_url
         else:
-            from_location = self.path_on_disk
+            from_location = self.get_file_path()
 
         df = pd.read_csv(from_location, **kwargs)
         logger.info(f"Loaded dataset {self.name} from {from_location}.")
@@ -186,45 +238,25 @@ def _available_datasets_on_disk(
     search_paths: list[Path] | None = None,
 ) -> Generator[LyDataset, None, None]:
     pattern = f"{str(year)}-{institution}-{subsite}"
-    search_paths = search_paths or [Path(__file__).parent.parent]
+
+    if search_paths is None:
+        search_paths = [Path(__file__).parent.parent]
+
+    search_paths = RootModel[list[DirectoryPath]].model_validate(search_paths).root
 
     for search_path in search_paths:
         for match in search_path.glob(pattern):
             if match.is_dir() and (match / "data.csv").exists():
+                logger.debug(f"Found dataset directory at '{match}'.")
                 year, institution, subsite = match.name.split("-", maxsplit=2)
                 yield LyDataset(
                     year=year,
                     institution=institution,
                     subsite=subsite,
+                    local_dataset_dir=search_path,
+                    repo_name=None,
+                    ref=None,
                 )
-
-
-def _safely_fetch_repo(gh: Github, repo_name: str) -> Repository:
-    """Fetch a GitHub repository, handling common errors."""
-    try:
-        repo = gh.get_repo(repo_name)
-    except UnknownObjectException as e:
-        raise ValueError(f"Could not find repository '{repo_name}' on GitHub.") from e
-    except BadCredentialsException as e:
-        raise ValueError("Invalid GitHub credentials.") from e
-
-    return repo
-
-
-def _safely_fetch_contents(repo: Repository, ref: str) -> list[ContentFile]:
-    """Fetch contents of a GitHub ``repo`` at a specific ``ref``, handling errors."""
-    try:
-        contents = repo.get_contents(path="", ref=ref)
-    except GithubException as e:
-        available_branches = [b.name for b in repo.get_branches()]
-        available_tags = [t.name for t in repo.get_tags()]
-        raise ValueError(
-            f"Could not find ref '{ref}' in repository '{repo.full_name}'.\n"
-            f"Available branches: {available_branches}.\n"
-            f"Available tags: {available_tags}."
-        ) from e
-
-    return contents
 
 
 def _available_datasets_on_github(
