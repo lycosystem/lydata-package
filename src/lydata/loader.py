@@ -64,11 +64,15 @@ def _safely_fetch_repo(gh: Github, repo_name: str) -> Repository:
     return repo
 
 
-def _safely_fetch_contents(repo: Repository, ref: str) -> list[ContentFile]:
+def _safely_fetch_contents(
+    repo: Repository,
+    ref: str,
+    path: str = ".",
+) -> list[ContentFile] | ContentFile:
     """Fetch contents of a GitHub ``repo`` at a specific ``ref``, handling errors."""
     try:
         logger.debug(f"Fetching contents of repo '{repo.full_name}' at ref '{ref}'...")
-        contents = repo.get_contents(path="", ref=ref)
+        contents = repo.get_contents(path=path, ref=ref)
     except GithubException as e:
         available_branches = [b.name for b in repo.get_branches()]
         available_tags = [t.name for t in repo.get_tags()]
@@ -190,7 +194,11 @@ class LyDataset(BaseModel):
             return self._content_file
 
         repo = self.get_repo(token=token, user=user, password=password)
-        self._content_file = _safely_fetch_contents(repo=repo, ref=self.ref)
+        self._content_file = _safely_fetch_contents(
+            repo=repo,
+            path=f"{self.name}/data.csv",
+            ref=self.ref,
+        )
         return self._content_file
 
     def get_dataframe(
