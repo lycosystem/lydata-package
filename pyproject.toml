@@ -45,6 +45,7 @@ docs = [
 tests = [
     "pytest",
     "pytest-cov",
+    "python-dotenv>=1.1.1",
 ]
 dev = [
     "pre-commit",
