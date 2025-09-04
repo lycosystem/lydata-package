@@ -51,7 +51,7 @@ The first and most common use case would probably listing and loading the publis
 >>> print(first_dataset.head())
 ... # doctest: +ELLIPSIS, +NORMALIZE_WHITESPACE
   patient                              ... positive_dissected
-        #                              ...             contra
+     core                              ...             contra
        id         institution     sex  ...                III   IV    V
 0    P011  Centre Léon Bérard    male  ...                0.0  0.0  0.0
 1    P012  Centre Léon Bérard  female  ...                0.0  0.0  0.0
@@ -72,7 +72,7 @@ And since the three-level header of the tables is a little unwieldy at times, we
       ...
 261    60
 262    60
-Name: (patient, #, age), Length: 263, dtype: int64
+Name: (patient, core, age), Length: 263, dtype: int64
 
 ```
 
