@@ -3,7 +3,7 @@
 The loading itself is implemented in the :py:class:`.LyDataset` class, which
 is a :py:class:`pydantic.BaseModel` subclass. It validates the unique specification
 that identifies a dataset and then allows loading it from the disk (if present) or
-from GitHub.
+from GitHub (default).
 
 The :py:func:`available_datasets` function can be used to create a generator of such
 :py:class:`.LyDataset` instances, corresponding to all available datasets that
@@ -13,9 +13,6 @@ Consequently, the :py:func:`load_datasets` function can be used to load all data
 matching the given specs/pattern. It takes the same arguments as the function
 :py:func:`available_datasets` but returns a generator of :py:class:`pandas.DataFrame`
 instead of :py:class:`.LyDataset`.
-
-Lastly, with the :py:func:`join_datasets` function, one can load and concatenate all
-datasets matching the given specs/pattern into a single :py:class:`pandas.DataFrame`.
 
 The docstring of all functions contains some basic doctest examples.
 """
@@ -28,12 +25,22 @@ from pathlib import Path
 
 import numpy as np  # noqa: F401
 import pandas as pd
-from github import Github, Repository
+from github import BadCredentialsException, Github, Repository, UnknownObjectException
 from github.ContentFile import ContentFile
+from github.GithubException import GithubException
 from loguru import logger
-from pydantic import BaseModel, Field, PrivateAttr, constr
+from pydantic import (
+    BaseModel,
+    DirectoryPath,
+    Field,
+    PrivateAttr,
+    RootModel,
+    constr,
+)
 
+from lydata.accessor import LyDataFrame
 from lydata.utils import get_github_auth
+from lydata.validator import cast_dtypes, is_valid
 
 _default_repo_name = "lycosystem/lydata"
 low_min1_str = constr(to_lower=True, min_length=1)
@@ -41,6 +48,42 @@ low_min1_str = constr(to_lower=True, min_length=1)
 
 class SkipDiskError(Exception):
     """Raised when the user wants to skip loading from disk."""
+
+
+def _safely_fetch_repo(gh: Github, repo_name: str) -> Repository:
+    """Fetch a GitHub repository, handling common errors."""
+    try:
+        logger.debug(f"Fetching repository '{repo_name}' from GitHub...")
+        repo = gh.get_repo(repo_name)
+    except UnknownObjectException as e:
+        raise ValueError(f"Could not find repository '{repo_name}' on GitHub.") from e
+    except BadCredentialsException as e:
+        raise ValueError("Invalid GitHub credentials.") from e
+
+    logger.debug(f"Fetched repository '{repo.full_name}' from GitHub.")
+    return repo
+
+
+def _safely_fetch_contents(
+    repo: Repository,
+    ref: str,
+    path: str = ".",
+) -> list[ContentFile] | ContentFile:
+    """Fetch contents of a GitHub ``repo`` at a specific ``ref``, handling errors."""
+    try:
+        logger.debug(f"Fetching contents of repo '{repo.full_name}' at ref '{ref}'...")
+        contents = repo.get_contents(path=path, ref=ref)
+    except GithubException as e:
+        available_branches = [b.name for b in repo.get_branches()]
+        available_tags = [t.name for t in repo.get_tags()]
+        raise ValueError(
+            f"Could not find ref '{ref}' in repository '{repo.full_name}'.\n"
+            f"Available branches: {available_branches}.\n"
+            f"Available tags: {available_tags}."
+        ) from e
+
+    logger.debug(f"Fetched contents of repo '{repo.full_name}' at ref '{ref}'.")
+    return contents
 
 
 class LyDataset(BaseModel):
@@ -57,13 +100,22 @@ class LyDataset(BaseModel):
     subsite: low_min1_str = Field(
         description="Tumor subsite(s) patients in this dataset were diagnosed with.",
     )
-    repo_name: low_min1_str = Field(
+    repo_name: low_min1_str | None = Field(
         default=_default_repo_name,
         description="GitHub `repository/owner`.",
     )
-    ref: low_min1_str = Field(
+    ref: low_min1_str | None = Field(
         default="main",
         description="Branch/tag/commit of the repo.",
+    )
+    local_dataset_dir: DirectoryPath | None = Field(
+        default=None,
+        description=(
+            "Path to directory containing all the dataset subdirectories. So, e.g. if "
+            "`path_on_disk` is `~/datasets` and the dataset is `2023-clb-multisite`, "
+            "then the CSV file is expected to be at "
+            "`~/datasets/2023-clb-multisite/data.csv`."
+        ),
     )
     _content_file: ContentFile | None = PrivateAttr(default=None)
 
@@ -77,11 +129,17 @@ class LyDataset(BaseModel):
         """
         return f"{self.year}-{self.institution}-{self.subsite}"
 
-    @property
-    def path_on_disk(self) -> Path:
-        """Get the path to the dataset."""
-        install_loc = Path(__file__).parent.parent
-        return install_loc / self.name / "data.csv"
+    def get_file_path(self) -> Path:
+        """Get the path to the CSV dataset."""
+        if self.local_dataset_dir is None:
+            self.local_dataset_dir = Path(__file__).parent.parent
+
+        dataset_path = self.local_dataset_dir / self.name / "data.csv"
+        if not dataset_path.exists():
+            raise FileNotFoundError(f"Could not find CSV locally at '{dataset_path}'.")
+
+        logger.info(f"Found dataset {self.name} on disk at '{dataset_path}'.")
+        return dataset_path
 
     def get_repo(
         self,
@@ -108,9 +166,7 @@ class LyDataset(BaseModel):
         """
         auth = get_github_auth(token=token, user=user, password=password)
         gh = Github(auth=auth)
-        repo = gh.get_repo(self.repo_name)
-        logger.info(f"Fetched repository {repo.full_name} from GitHub.")
-        return repo
+        return _safely_fetch_repo(gh=gh, repo_name=self.repo_name)
 
     def get_content_file(
         self,
@@ -138,7 +194,11 @@ class LyDataset(BaseModel):
             return self._content_file
 
         repo = self.get_repo(token=token, user=user, password=password)
-        self._content_file = repo.get_contents(f"{self.name}/data.csv", ref=self.ref)
+        self._content_file = _safely_fetch_contents(
+            repo=repo,
+            path=f"{self.name}/data.csv",
+            ref=self.ref,
+        )
         return self._content_file
 
     def get_dataframe(
@@ -148,7 +208,7 @@ class LyDataset(BaseModel):
         user: str | None = None,
         password: str | None = None,
         **load_kwargs,
-    ) -> pd.DataFrame:
+    ) -> LyDataFrame:
         """Load the ``data.csv`` file from disk or from GitHub.
 
         One can also choose to ``use_github``. Any keyword arguments are passed to
@@ -171,7 +231,7 @@ class LyDataset(BaseModel):
                 token=token, user=user, password=password
             ).download_url
         else:
-            from_location = self.path_on_disk
+            from_location = self.get_file_path()
 
         df = pd.read_csv(from_location, **kwargs)
         logger.info(f"Loaded dataset {self.name} from {from_location}.")
@@ -186,16 +246,24 @@ def _available_datasets_on_disk(
     search_paths: list[Path] | None = None,
 ) -> Generator[LyDataset, None, None]:
     pattern = f"{str(year)}-{institution}-{subsite}"
-    search_paths = search_paths or [Path(__file__).parent.parent]
+
+    if search_paths is None:
+        search_paths = [Path(__file__).parent.parent]
+
+    search_paths = RootModel[list[DirectoryPath]].model_validate(search_paths).root
 
     for search_path in search_paths:
         for match in search_path.glob(pattern):
             if match.is_dir() and (match / "data.csv").exists():
+                logger.debug(f"Found dataset directory at '{match}'.")
                 year, institution, subsite = match.name.split("-", maxsplit=2)
                 yield LyDataset(
                     year=year,
                     institution=institution,
                     subsite=subsite,
+                    local_dataset_dir=search_path,
+                    repo_name=None,
+                    ref=None,
                 )
 
 
@@ -206,10 +274,10 @@ def _available_datasets_on_github(
     repo_name: str = _default_repo_name,
     ref: str = "main",
 ) -> Generator[LyDataset, None, None]:
+    """Generate :py:class:`.LyDataset` instances of available datasets on GitHub."""
     gh = Github(auth=get_github_auth())
-
-    repo = gh.get_repo(repo_name)
-    contents = repo.get_contents(path="", ref=ref)
+    repo = _safely_fetch_repo(gh=gh, repo_name=repo_name)
+    contents = _safely_fetch_contents(repo=repo, ref=ref)
 
     matches = []
     for content in contents:
@@ -217,6 +285,12 @@ def _available_datasets_on_github(
             content.name, f"{year}-{institution}-{subsite}"
         ):
             matches.append(content)
+
+    if len(matches) == 0:
+        raise ValueError(
+            f"No datasets found in repository '{repo_name}' matching "
+            f"'{year}-{institution}-{subsite}' at ref '{ref}'."
+        )
 
     for match in matches:
         year, institution, subsite = match.name.split("-", maxsplit=2)
@@ -307,13 +381,25 @@ def load_datasets(
     use_github: bool = True,
     repo_name: str = _default_repo_name,
     ref: str = "main",
+    cast: bool = False,
+    validate: bool = False,
+    enhance: bool = False,
     **kwargs,
-) -> Generator[pd.DataFrame, None, None]:
-    """Load matching datasets from the disk.
+) -> Generator[LyDataFrame, None, None]:
+    """Load matching datasets from GitHub or from the disk.
 
     It loads every dataset from the :py:class:`.LyDataset` instances generated by
-    the :py:func:`available_datasets` function, which also receives all arguments of
+    the :py:func:`available_datasets` function, which also receives most arguments of
     this function.
+
+    The boolean flags ``cast``, ``validate``, and ``enhance`` can be used to
+    automatically cast the dtypes of the loaded :py:class:`pandas.DataFrame`s,
+    validate them, and enhance them with additional columns. These operations are
+    performed using the :py:func:`~lydata.cast_dtypes`, :py:func:`~lydata.is_valid`,
+    the :py:func:`~lydata.LyDataAccessor.enhance` method, respectively.
+
+    Additional keyword arguments are passed to the :py:meth:`LyDataset.get_dataframe`
+    method.
     """
     dset_confs = available_datasets(
         year=year,
@@ -325,4 +411,7 @@ def load_datasets(
         ref=ref,
     )
     for dset_conf in dset_confs:
-        yield dset_conf.get_dataframe(use_github=use_github, **kwargs)
+        df: LyDataFrame = dset_conf.get_dataframe(use_github=use_github, **kwargs)
+        df = cast_dtypes(df) if cast else df
+        _ = validate and is_valid(df, fail_on_error=True)
+        yield df.ly.enhance() if enhance else df

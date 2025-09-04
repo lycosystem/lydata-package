@@ -1,7 +1,7 @@
 .. currentmodule:: lydata.validator
 
-Pandera Schemas to Validate Datasets
-====================================
+Type Casting and Validation
+===========================
 
 .. automodule:: lydata.validator
     :members:

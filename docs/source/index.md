@@ -9,7 +9,10 @@
 :maxdepth: 2
 
 accessor
+augmentor
 loader
+querier
+schema
 utils
 validator
 :::
