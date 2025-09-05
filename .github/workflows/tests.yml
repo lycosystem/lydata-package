@@ -29,10 +29,11 @@ jobs:
 
       # Below, we first run pytest in the `tests/` folder. Because we use a `src`
       # layout, this will fail if the package is not installed correctly.
-      - name: Test package is installable
+      - name: Patient-specific and installation tests
         run: pytest --cov=lydata --cov-config=pyproject.toml tests
         env:
           COVERAGE_FILE: .coverage.is_installable
+          GITHUB_TOKEN: ${{ secrets.LYCOSYSTEM_READALL }}
 
       # Now, we execute all doctests in the `src` tree. This will NOT run with
       # the installed code, but it doesn't matter, because we already know it is
