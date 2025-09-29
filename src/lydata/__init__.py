@@ -12,7 +12,7 @@ from lydata.querier import C, Q
 from lydata.validator import is_valid
 
 __author__ = "Roman Ludwig"
-__email__ = "roman.ludwig@usz.ch"
+__email__ = "gygqdstu3@mozmail.com"
 __uri__ = "https://github.com/lycosystem/lydata"
 __version__ = _version.__version__
 
