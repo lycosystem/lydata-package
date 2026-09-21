@@ -223,7 +223,6 @@ class TumorCore(BaseModel):
     )
     dist_to_midline: float | None = Field(
         default=None,
-        ge=0,
         description="Distance of the tumor to the mid-sagittal line in mm.",
     )
     volume: float | None = Field(
