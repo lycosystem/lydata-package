@@ -1,34 +1,30 @@
-"""Pydantic schema to define a single patient record.
+"""Schema of a patient record for head and neck cancer.
 
-This schema is useful for casting dtypes, as done in :py:func:`validator.cast_dtypes`,
-validation via :py:func:`~validator.is_valid`, and for exporting a JSON schema that
-may be used for all kinds of purposes, e.g. to automatically generate HTML forms using
-a `JSON-Editor`_.
-
-.. _JSON-Editor: https://json-editor.github.io/json-editor/
+This defines the lymph node levels (LNLs) of the neck, as well as the patient and tumor
+information that is relevant for head and neck squamous cell carcinoma, e.g. the HPV
+status or whether the tumor extends over the mid-sagittal line.
 """
 
 from __future__ import annotations
 
-import json
-import sys
-from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import pandas as pd
-from loguru import logger
 from pydantic import (
     BaseModel,
     BeforeValidator,
     Field,
     PastDate,
-    RootModel,
-    create_model,
     field_validator,
     model_validator,
 )
 
-from lydata.utils import get_default_modalities
+from lydata.schema import base
+from lydata.schema.base import (
+    BaseModalityRecord,
+    convert_nat,
+    create_involvement_model,
+)
 
 _LNLS = [
     "I",
@@ -56,15 +52,6 @@ _LNLS = [
     "IX",
     "X",
 ]
-
-
-def convert_nat(value: Any) -> Any:
-    """Convert pandas NaT to None.
-
-    pydantic throws an unspecific ``TypeError`` when ``pd.NaT`` is passed to a field.
-    See [this issue on Github](https://github.com/pydantic/pydantic/issues/8039).
-    """
-    return None if pd.isna(value) else value
 
 
 class PatientCore(BaseModel):
@@ -338,30 +325,10 @@ class TumorRecord(BaseModel):
     )
 
 
-def create_lnl_field(lnl: str) -> tuple[type, Field]:
-    """Create a field for a specific lymph node level."""
-    return (
-        Annotated[bool | None, BeforeValidator(lambda v: None if pd.isna(v) else v)],
-        Field(default=None, description=f"LN {lnl} involvement"),
-    )
+UnilateralInvolvementInfo = create_involvement_model(_LNLS)
 
 
-class ModalityCore(BaseModel):
-    """Basic info about a diagnostic/pathological modality."""
-
-    date: Annotated[PastDate | None, BeforeValidator(convert_nat)] = Field(
-        description="Date of the diagnostic or pathological modality.",
-        default=None,
-    )
-
-
-UnilateralInvolvementInfo = create_model(
-    "UnilateralInvolvementInfo",
-    **{lnl: create_lnl_field(lnl) for lnl in _LNLS},
-)
-
-
-class ModalityRecord(BaseModel):
+class ModalityRecord(BaseModalityRecord):
     """Involvement patterns of a diagnostic or pathological modality.
 
     This holds some basic information about the modality, which is currently limited to
@@ -371,10 +338,6 @@ class ModalityRecord(BaseModel):
     involvement patterns under the respective keys ``ipsi`` and ``contra``.
     """
 
-    core: ModalityCore = Field(
-        title="Core",
-        default_factory=ModalityCore,
-    )
     ipsi: UnilateralInvolvementInfo = Field(
         title="Ipsilateral Involvement",
         description="Involvement patterns of the ipsilateral side.",
@@ -384,18 +347,6 @@ class ModalityRecord(BaseModel):
         title="Contralateral Involvement",
         description="Involvement patterns of the contralateral side.",
         default_factory=UnilateralInvolvementInfo,
-    )
-
-
-def create_modality_field(modality: str) -> tuple[type, Field]:
-    """Create a field for a specific modality."""
-    return (
-        ModalityRecord,
-        Field(
-            title=modality,
-            description=f"Involvement patterns as observed using {modality}.",
-            default_factory=ModalityRecord,
-        ),
     )
 
 
@@ -427,40 +378,21 @@ class BaseRecord(BaseModel):
     )
 
 
+def create_modality_field(modality: str) -> tuple[type, Any]:
+    """Create a field for a specific modality."""
+    return base.create_modality_field(modality, ModalityRecord)
+
+
 def create_full_record_model(
     modalities: list[str],
     model_name: str = "FullRecord",
     **kwargs: dict[str, Any],
 ) -> type:
     """Create a Pydantic model for a full record with all ``modalities``."""
-    return create_model(
-        model_name,
-        __base__=BaseRecord,
-        **{mod: create_modality_field(mod) for mod in modalities},
+    return base.create_full_record_model(
+        modalities,
+        base_record=BaseRecord,
+        modality_record=ModalityRecord,
+        model_name=model_name,
         **kwargs,
     )
-
-
-def _write_schema_to_file(
-    schema: type[BaseModel] | None = None,
-    file_path: Path = Path("schema.json"),
-) -> None:
-    """Write the Pydantic schema to a file."""
-    if schema is None:
-        modalities = get_default_modalities()
-        schema = create_full_record_model(modalities, model_name="Record")
-
-    root_schema = RootModel[list[schema]]
-
-    with open(file_path, "w") as f:
-        json_schema = root_schema.model_json_schema()
-        f.write(json.dumps(json_schema, indent=2))
-
-    logger.success(f"Schema written to {file_path}")
-
-
-if __name__ == "__main__":
-    logger.enable("lydata")
-    logger.remove()
-    logger.add(sys.stderr, level="DEBUG")
-    _write_schema_to_file()
