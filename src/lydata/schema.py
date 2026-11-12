@@ -35,17 +35,14 @@ _LNLS = [
     "Ia",
     "Ib",
     "II",
-    "IIa",
-    "IIb",
     "III",
-    "IIIa",
-    "IIIb",
     "IV",
     "IVa",
     "IVb",
     "V",
     "Va",
     "Vb",
+    "Vc",
     "VI",
     "VIa",
     "VIb",
@@ -55,6 +52,8 @@ _LNLS = [
     "VIII",
     "IX",
     "X",
+    "Xa",
+    "Xb",
 ]
 
 
