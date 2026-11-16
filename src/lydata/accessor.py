@@ -517,7 +517,11 @@ class LyDataAccessor:
             subdivisions = {
                 "I": ["a", "b"],
                 "II": ["a", "b"],
-                "V": ["a", "b"],
+                "IV": ["a", "b"],
+                "V": ["a", "b", "c"],
+                "VI": ["a", "b"],
+                "VII": ["a", "b"],
+                "X": ["a", "b"],
             }
 
         if modalities is None:

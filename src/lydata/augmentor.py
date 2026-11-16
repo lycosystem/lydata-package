@@ -211,7 +211,10 @@ def combine_and_augment_levels(
         subdivisions = {
             "I": ["a", "b"],
             "II": ["a", "b"],
-            "V": ["a", "b"],
+            "V": ["a", "b", "c"],
+            "VI": ["a", "b"],
+            "VII": ["a", "b"],
+            "X": ["a", "b"],
         }
 
     for side, (superlvl, subids) in product(sides, subdivisions.items()):

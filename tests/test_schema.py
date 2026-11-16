@@ -9,6 +9,7 @@ from lydata.schema import (
     BaseRecord,
     PatientCore,
     PatientRecord,
+    TumorAlgo,
     TumorCore,
     TumorRecord,
 )
@@ -47,6 +48,23 @@ def tumor_core_dict() -> dict[str, Any]:
     }
 
 
+@pytest.fixture
+def tumor_algo_dict() -> dict[str, Any]:
+    """Fixture for a sample tumor algo info."""
+    return {
+        "side": "left",
+        "volume": 20.05,
+        "volume_ipsi": 10.05,
+        "volume_contra": 10.00,
+        "extension": True,
+        "extension_dist": 2,
+        "width": 5,
+        "max_extent_ipsi": 3,
+        "max_extent_contra": 2,
+        "max_diameter": 5.5,
+    }
+
+
 def test_patient_core(patient_core_dict: dict[str, Any]) -> None:
     """Test the PatientInfo schema."""
     patient_info = PatientCore(**patient_core_dict)
@@ -66,6 +84,14 @@ def test_tumor_core(tumor_core_dict: dict[str, Any]) -> None:
         assert getattr(tumor_core, key) == value, f"Mismatch for {key}"
 
 
+def test_tumor_algo(tumor_algo_dict: dict[str, Any]) -> None:
+    """Test the TumorAlgo schema."""
+    tumor_algo = TumorAlgo(**tumor_algo_dict)
+
+    for key, value in tumor_algo_dict.items():
+        assert getattr(tumor_algo, key) == value, f"Mismatch for {key}"
+
+
 @pytest.fixture
 def patient_core(patient_core_dict: dict[str, Any]) -> PatientCore:
     """Fixture for a sample PatientInfo instance."""
@@ -78,6 +104,12 @@ def tumor_core(tumor_core_dict: dict[str, Any]) -> TumorCore:
     return TumorCore(**tumor_core_dict)
 
 
+@pytest.fixture
+def tumor_algo(tumor_algo_dict: dict[str, Any]) -> TumorAlgo:
+    """Fixture for a sample TumorAlgo instance."""
+    return TumorAlgo(**tumor_algo_dict)
+
+
 def test_patient_record(patient_core: PatientCore) -> None:
     """Test the PatientRecord schema."""
     record = PatientRecord(core=patient_core)
@@ -85,11 +117,15 @@ def test_patient_record(patient_core: PatientCore) -> None:
     assert record.core == patient_core, "PatientRecord info does not match PatientInfo"
 
 
-def test_tumor_record(tumor_core: TumorCore) -> None:
+def test_tumor_record(
+    tumor_core: TumorCore,
+    tumor_algo: TumorAlgo,
+) -> None:
     """Test the TumorRecord schema."""
-    record = TumorRecord(core=tumor_core)
+    record = TumorRecord(core=tumor_core, algo=tumor_algo)
 
     assert record.core == tumor_core, "TumorRecord info does not match TumorInfo"
+    assert record.algo == tumor_algo, "TumorRecord info does not match TumorAlgo"
 
 
 @pytest.fixture

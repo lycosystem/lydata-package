@@ -11,6 +11,7 @@ a `JSON-Editor`_.
 from __future__ import annotations
 
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -35,6 +36,8 @@ _LNLS = [
     "Ia",
     "Ib",
     "II",
+    "IIa",
+    "IIb",
     "III",
     "IV",
     "IVa",
@@ -55,6 +58,16 @@ _LNLS = [
     "Xa",
     "Xb",
 ]
+
+_MIDLINE_FIELDS = (
+    "side",
+    "volume_ipsi",
+    "volume_contra",
+    "extension",
+    "extension_dist",
+    "max_extent_ipsi",
+    "max_extent_contra",
+)
 
 
 def convert_nat(value: Any) -> Any:
@@ -115,7 +128,7 @@ class PatientCore(BaseModel):
     )
     tnm_edition: int = Field(
         ge=6,
-        le=8,
+        le=9,
         default=8,
         description="Edition of the TNM classification used for staging.",
     )
@@ -221,16 +234,16 @@ class TumorCore(BaseModel):
         pattern=r"C[0-9]{2}(\.[0-9X])?",
     )
     central: bool | None = Field(
-        description="Whether the tumor is located on the mid-sagittal line.",
+        description="Whether the tumor is located on the mid-sagittal plane.",
         default=False,
     )
     extension: bool | None = Field(
-        description="Whether the tumor extends over the mid-sagittal line.",
+        description="Whether the tumor extends over the mid-sagittal plane.",
         default=False,
     )
     dist_to_midline: float | None = Field(
         default=None,
-        description="Distance of the tumor to the mid-sagittal line in mm.",
+        description="Distance of the tumor to the mid-sagittal plane in mm.",
     )
     volume: float | None = Field(
         default=None,
@@ -323,17 +336,186 @@ class TumorCore(BaseModel):
         return self
 
 
+class TumorAlgo(BaseModel):
+    """Automatically extracted features of the tumor of a patient.
+
+    This holds features that describe the primary tumor's position relative to
+    the patient's midline. In contrast to the clinically assessed fields in
+    :py:class:`TumorCore`, these are computed from the GTVp contour and an automatically
+    detected midline. The features include the GTVp volume on each side of the midline
+    and the distance by which the tumor crosses the midline, or how far it lies
+    from it.
+    """
+
+    side: Literal["left", "right"] | None = Field(
+        default=None,
+        description=(
+            "Side of the midline containing the larger part of the GTVp volume. "
+            "This side is considered ipsilateral for the other features."
+        ),
+    )
+    volume: float | None = Field(
+        default=None,
+        ge=0,
+        description="Volume of the GTVp contour in cm³.",
+    )
+    volume_ipsi: float | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Volume of the GTVp contour on the ipsilateral side of the midline in cm³."
+        ),
+    )
+    volume_contra: float | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Volume of the GTVp contour on the contralateral side of the midline, "
+            "in cm³."
+        ),
+    )
+    extension: bool | None = Field(
+        default=None,
+        description=("Whether the GTVp contour extends across the detected midline."),
+    )
+    extension_dist: float | None = Field(
+        default=None,
+        description=(
+            "Signed distance in mm between the midline and the GTVp's most "
+            "contralateral edge. Positive values mean the tumor crosses the "
+            "midline by that distance, negative values mean it stays on the "
+            "ipsilateral side and lies that far from the midline."
+        ),
+    )
+    width: float | None = Field(
+        default=None,
+        ge=0,
+        description=("Left-right extent of the GTVp contour in mm."),
+    )
+    max_extent_ipsi: float | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Maximum distance from the midline that the tumor reaches on the "
+            "ipsilateral side, in mm."
+        ),
+    )
+    max_extent_contra: float | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Maximum distance from the midline that the tumour reaches on the "
+            "contralateral side, in mm. Zero if the tumour does not cross the midline."
+        ),
+    )
+    max_diameter: float | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Largest distance between any two points on the GTVp contour in mm."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def check_midline_fields_complete(self) -> TumorAlgo:
+        """Ensure midline-dependent features are either all present or all missing."""
+        missing = [f for f in _MIDLINE_FIELDS if getattr(self, f) is None]
+        if 0 < len(missing) < len(_MIDLINE_FIELDS):
+            raise ValueError(
+                "Midline-dependent features are only partially present. "
+                f"Missing: {missing}"
+            )
+        return self
+
+    @field_validator(
+        "volume",
+        "volume_ipsi",
+        "volume_contra",
+        "side",
+        "extension",
+        "extension_dist",
+        "width",
+        "max_extent_ipsi",
+        "max_extent_contra",
+        "max_diameter",
+        mode="before",
+    )
+    @classmethod
+    def nan_to_none(cls, value: Any) -> Any:
+        """Convert NaN values to None."""
+        return None if pd.isna(value) else value
+
+    @field_validator(
+        "side",
+        mode="before",
+    )
+    @classmethod
+    def to_lower(cls, value: Any) -> Any:
+        """Convert string values to lower case."""
+        if isinstance(value, str):
+            return value.lower()
+
+        return value
+
+    def _has_midline_features(self) -> bool:
+        """Whether all midline-dependent features are present."""
+        return all(getattr(self, f) is not None for f in _MIDLINE_FIELDS)
+
+    @model_validator(mode="after")
+    def check_ipsi_is_larger(self) -> TumorAlgo:
+        """Ensure ipsilateral volume is really larger."""
+        if self._has_midline_features() and self.volume_ipsi < self.volume_contra:
+            raise ValueError(f"{self.volume_ipsi=} smaller than {self.volume_contra=}.")
+        return self
+
+    @model_validator(mode="after")
+    def check_extension(self) -> TumorAlgo:
+        """Ensure extension information is consistent with contra metrics."""
+        if not self._has_midline_features():
+            return self
+        checks = {
+            "volume_contra > 0": self.volume_contra > 0,
+            "extension_dist > 0": self.extension_dist > 0,
+            "max_extent_contra > 0": self.max_extent_contra > 0,
+        }
+        wrong = [name for name, holds in checks.items() if holds != self.extension]
+        if wrong:
+            raise ValueError(f"{self.extension=}, but these disagree: {wrong}.")
+        return self
+
+    @model_validator(mode="after")
+    def check_volume_sum(self) -> TumorAlgo:
+        """Ensure ipsi- and contralateral volumes add up to total volume."""
+        if self.volume is None or not self._has_midline_features():
+            return self
+        total = self.volume_ipsi + self.volume_contra
+        if not math.isclose(total, self.volume, rel_tol=1e-3):
+            raise ValueError(
+                f"{self.volume_ipsi=} + {self.volume_contra=} not equal "
+                f"to {self.volume=}."
+            )
+        return self
+
+
 class TumorRecord(BaseModel):
     """A tumor record of a patient.
 
     As with the :py:class:`PatientRecord`, this holds only the key ``core`` under which
     we store the actual tumor information defined in the :py:class:`TumorCore` model.
+    The key ``algo`` holds automatically extracted information related to the midline
+    defined in the :py:class:`TumorAlgo` model.
     """
 
     core: TumorCore = Field(
         title="Core",
         description="Core information about the tumor.",
         default_factory=TumorCore,
+    )
+    algo: TumorAlgo = Field(
+        title="Algo",
+        description="Automatically extracted, midline-related features of"
+        " the primary tumor.",
+        default_factory=TumorAlgo,
     )
 
 
