@@ -344,16 +344,11 @@ class TumorAlgo(BaseModel):
     :py:class:`TumorCore`, these are computed from the GTVp contour and an automatically
     detected midline. The features include the GTVp volume on each side of the midline
     and the distance by which the tumor crosses the midline, or how far it lies
-    from it.
+    from it. Ipsi- and contralateral are defined by the `side` in the
+    :py:class:`TumorCore`. Hence, for a few patients the ipsilateral part of the GTVp
+    is smaller than the contralateral one.
     """
 
-    side: Literal["left", "right"] | None = Field(
-        default=None,
-        description=(
-            "Side of the midline containing the larger part of the GTVp volume. "
-            "This side is considered ipsilateral for the other features."
-        ),
-    )
     volume: float | None = Field(
         default=None,
         ge=0,
@@ -392,20 +387,12 @@ class TumorAlgo(BaseModel):
         ge=0,
         description=("Left-right extent of the GTVp contour in mm."),
     )
-    max_extent_ipsi: float | None = Field(
+    ipsi_dist: float | None = Field(
         default=None,
         ge=0,
         description=(
             "Maximum distance from the midline that the tumor reaches on the "
             "ipsilateral side, in mm."
-        ),
-    )
-    max_extent_contra: float | None = Field(
-        default=None,
-        ge=0,
-        description=(
-            "Maximum distance from the midline that the tumour reaches on the "
-            "contralateral side, in mm. Zero if the tumour does not cross the midline."
         ),
     )
     max_diameter: float | None = Field(
@@ -431,12 +418,10 @@ class TumorAlgo(BaseModel):
         "volume",
         "volume_ipsi",
         "volume_contra",
-        "side",
         "extension",
         "extension_dist",
         "width",
-        "max_extent_ipsi",
-        "max_extent_contra",
+        "ipsi_dist",
         "max_diameter",
         mode="before",
     )
@@ -445,28 +430,9 @@ class TumorAlgo(BaseModel):
         """Convert NaN values to None."""
         return None if pd.isna(value) else value
 
-    @field_validator(
-        "side",
-        mode="before",
-    )
-    @classmethod
-    def to_lower(cls, value: Any) -> Any:
-        """Convert string values to lower case."""
-        if isinstance(value, str):
-            return value.lower()
-
-        return value
-
     def _has_midline_features(self) -> bool:
         """Whether all midline-dependent features are present."""
         return all(getattr(self, f) is not None for f in _MIDLINE_FIELDS)
-
-    @model_validator(mode="after")
-    def check_ipsi_is_larger(self) -> TumorAlgo:
-        """Ensure ipsilateral volume is really larger."""
-        if self._has_midline_features() and self.volume_ipsi < self.volume_contra:
-            raise ValueError(f"{self.volume_ipsi=} smaller than {self.volume_contra=}.")
-        return self
 
     @model_validator(mode="after")
     def check_extension(self) -> TumorAlgo:
