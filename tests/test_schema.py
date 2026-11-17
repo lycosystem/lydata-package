@@ -52,15 +52,13 @@ def tumor_core_dict() -> dict[str, Any]:
 def tumor_algo_dict() -> dict[str, Any]:
     """Fixture for a sample tumor algo info."""
     return {
-        "side": "left",
         "volume": 20.05,
         "volume_ipsi": 10.05,
         "volume_contra": 10.00,
         "extension": True,
         "extension_dist": 2,
         "width": 5,
-        "max_extent_ipsi": 3,
-        "max_extent_contra": 2,
+        "ipsi_dist": 3,
         "max_diameter": 5.5,
     }
 
