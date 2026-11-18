@@ -60,13 +60,11 @@ _LNLS = [
 ]
 
 _MIDLINE_FIELDS = (
-    "side",
     "volume_ipsi",
     "volume_contra",
     "extension",
     "extension_dist",
-    "max_extent_ipsi",
-    "max_extent_contra",
+    "ipsi_dist",
 )
 
 
@@ -442,7 +440,6 @@ class TumorAlgo(BaseModel):
         checks = {
             "volume_contra > 0": self.volume_contra > 0,
             "extension_dist > 0": self.extension_dist > 0,
-            "max_extent_contra > 0": self.max_extent_contra > 0,
         }
         wrong = [name for name, holds in checks.items() if holds != self.extension]
         if wrong:
