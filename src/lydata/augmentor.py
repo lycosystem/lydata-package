@@ -211,6 +211,7 @@ def combine_and_augment_levels(
         subdivisions = {
             "I": ["a", "b"],
             "II": ["a", "b"],
+            "IV": ["a", "b"],
             "V": ["a", "b", "c"],
             "VI": ["a", "b"],
             "VII": ["a", "b"],
