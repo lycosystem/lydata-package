@@ -40,23 +40,14 @@ _LNLS = [
     "IIb",
     "III",
     "IV",
-    "IVa",
-    "IVb",
     "V",
     "Va",
     "Vb",
-    "Vc",
     "VI",
-    "VIa",
-    "VIb",
     "VII",
-    "VIIa",
-    "VIIb",
     "VIII",
     "IX",
     "X",
-    "Xa",
-    "Xb",
 ]
 
 _MIDLINE_FIELDS = (
